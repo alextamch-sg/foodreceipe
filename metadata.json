@@ -1,0 +1,6 @@
+{
+  "name": "Heirloom Table",
+  "description": "Smart family kitchen grocery consolidation, pantry tracking, and personalized weekly meal planning.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
