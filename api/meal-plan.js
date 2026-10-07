@@ -1,11 +1,11 @@
 /**
  * /api/meal-plan.js
- * Generates an optimized 7-day family weekly menu rotation using Claude Messages API (Anthropic SDK)
+ * Generates an optimized 7-day family weekly menu rotation using Gemini (@google/genai)
  * and Spoonacular recipe candidates.
- * Compatible with Vercel and Node HTTP.
+ * Compatible with Vercel serverless functions and Express/Node.
  */
 
-import Anthropic from '@anthropic-ai/sdk';
+import { GoogleGenAI, Type } from '@google/genai';
 import { searchSpoonacularRecipes, sanitizeErrorMessage, getCuratedRecipes } from '../lib/api-client.js';
 
 export default async function handler(req, res) {
@@ -60,7 +60,7 @@ export default async function handler(req, res) {
   } = body || {};
 
   try {
-    // 1. Gather candidate recipes from Spoonacular / curated database
+    // 1. Gather candidate recipes from Spoonacular & curated catalog
     const cuisineQuery = primaryCuisines.join(',');
     const spoonCandidatesRes = await searchSpoonacularRecipes({
       query: '',
@@ -69,7 +69,6 @@ export default async function handler(req, res) {
     });
 
     let candidates = spoonCandidatesRes.results || [];
-    // Ensure we also include curated recipes for guaranteed variety
     const curated = getCuratedRecipes();
     candidates = [...candidates, ...curated];
 
@@ -82,26 +81,24 @@ export default async function handler(req, res) {
     });
     const uniqueCandidates = Array.from(candidateMap.values());
 
-    // Filter out recipes that conflict with explicit dietary restrictions
-    const restrictionsLower = dietaryRestrictions.map((r) => r.toLowerCase());
-    const dislikedLower = dislikedIngredients.map((d) => (typeof d === 'string' ? d : d.name).toLowerCase());
+    // Filter out candidates that conflict with dietary restrictions or dislikes
+    const restrictionsLower = (dietaryRestrictions || []).map((r) => r.toLowerCase());
+    const dislikedLower = (dislikedIngredients || []).map((d) => (typeof d === 'string' ? d : d.name).toLowerCase());
 
     const safeCandidates = uniqueCandidates.filter((r) => {
-      // Check cooking time
       if (r.readyInMinutes > cookingTimePreferences + 10) return false;
 
-      // Check ingredient safety
       const ingTexts = (r.extendedIngredients || []).map((i) => i.name.toLowerCase()).join(' ');
       const titleLower = r.title.toLowerCase();
 
-      // Check allergies (e.g. peanuts)
+      // Check allergies
       for (const res of restrictionsLower) {
         if (res.includes('peanut') && (ingTexts.includes('peanut') || titleLower.includes('peanut'))) {
           return false;
         }
       }
 
-      // Check disliked (e.g. bittergourd, cilantro)
+      // Check dislikes
       for (const dis of dislikedLower) {
         if (dis.includes('bittergourd') && (ingTexts.includes('bittergourd') || titleLower.includes('bittergourd'))) {
           return false;
@@ -115,13 +112,12 @@ export default async function handler(req, res) {
     });
 
     const activePool = safeCandidates.length >= 7 ? safeCandidates : uniqueCandidates;
+    const daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
-    // 2. Check if Claude / Anthropic API is configured
-    const anthropicKey = process.env.ANTHROPIC_API_KEY;
-    const anthropicModel = process.env.ANTHROPIC_MODEL || 'claude-3-5-sonnet-20241022';
+    // 2. Check if GEMINI_API_KEY is configured
+    const geminiKey = process.env.GEMINI_API_KEY;
 
-    if (!anthropicKey) {
-      // Fallback planner: deterministic & constraint-safe
+    if (!geminiKey) {
       const menu = buildDeterministicMenu({
         candidates: activePool,
         existingMenu,
@@ -133,18 +129,20 @@ export default async function handler(req, res) {
       return res.status(200).json({
         success: true,
         isDemo: true,
-        message: 'ANTHROPIC_API_KEY not configured. Used structured local constraint planner.',
+        message: 'GEMINI_API_KEY not configured. Used structured local constraint planner.',
         menu,
       });
     }
 
-    // 3. Call Claude via official Anthropic SDK
-    const anthropic = new Anthropic({
-      apiKey: anthropicKey,
-      timeout: 15000,
+    // 3. Call Gemini using official @google/genai SDK
+    const ai = new GoogleGenAI({
+      apiKey: geminiKey,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        },
+      },
     });
-
-    const daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
     const promptPayload = {
       daysOfWeek,
@@ -164,44 +162,52 @@ export default async function handler(req, res) {
       })),
     };
 
-    const response = await anthropic.messages.create({
-      model: anthropicModel,
-      max_tokens: 2000,
-      temperature: 0.2,
-      system: `You are the meal planning engine for Heirloom Table.
+    const response = await ai.models.generateContent({
+      model: 'gemini-3.8-flash',
+      contents: `Arrange the weekly menu for this household using the available recipes and constraints:\n${JSON.stringify(promptPayload, null, 2)}`,
+      config: {
+        systemInstruction: `You are the master family kitchen meal planner for Heirloom Table.
 Your task is to assign recipes to the 7-day Monday–Sunday menu for this family.
 RULES:
-1. ONLY use recipe IDs from the "availableRecipes" list. Do NOT invent new or fake recipe IDs.
+1. ONLY select recipe IDs from the "availableRecipes" list. DO NOT invent or hallucinate recipe IDs.
 2. If a day is in "lockedDays", retain the recipe from "existingMenuDays" for that day.
 3. Ensure cooking times do not exceed maxCookingMinutes.
 4. Strictly respect all dietary restrictions and disliked ingredients.
-5. Return ONLY a valid JSON array of 7 objects (one for each day Monday to Sunday).
-Each object must have:
-- day: string ("Monday" ... "Sunday")
-- recipeId: string (matching a real ID from availableRecipes)
-- subName: short tagline highlighting nutrition or family appeal
-- reason: brief note explaining why this fits the household profile`,
-      messages: [
-        {
-          role: 'user',
-          content: `Generate the meal plan for this family:\n${JSON.stringify(promptPayload, null, 2)}`,
+5. Return a JSON array of 7 objects (one for each day Monday through Sunday).`,
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              day: { type: Type.STRING, description: 'Day of the week (e.g. Monday)' },
+              recipeId: { type: Type.STRING, description: 'Recipe ID matching availableRecipes' },
+              subName: { type: Type.STRING, description: 'Short nutritional tagline for the family' },
+              reason: { type: Type.STRING, description: 'Brief note explaining why this fits household profile' },
+            },
+            required: ['day', 'recipeId', 'subName', 'reason'],
+          },
         },
-      ],
+      },
     });
 
-    // Parse Claude's response
-    const rawContent = response.content?.[0]?.type === 'text' ? response.content[0].text : '';
-    const jsonMatch = rawContent.match(/\[[\s\S]*\]/);
-    if (!jsonMatch) {
-      throw new Error('Claude response did not contain a valid JSON array');
+    const jsonText = response.text ? response.text.trim() : '';
+    let parsedAssignments = [];
+    try {
+      parsedAssignments = JSON.parse(jsonText);
+    } catch (e) {
+      const match = jsonText.match(/\[[\s\S]*\]/);
+      if (match) parsedAssignments = JSON.parse(match[0]);
     }
 
-    const parsedAssignments = JSON.parse(jsonMatch[0]);
+    if (!Array.isArray(parsedAssignments) || parsedAssignments.length === 0) {
+      throw new Error('Gemini response could not be parsed into a weekly menu array');
+    }
 
-    // Validate that all recipe IDs exist and assemble final menu
+    // Validate that recipe IDs exist and assemble final menu
     const assembledMenu = daysOfWeek.map((dayName, idx) => {
       // Check if locked
-      if (lockedDays.includes(dayName)) {
+      if (lockedDays.includes(dayName) && swapDay !== dayName) {
         const existing = existingMenu.find((m) => m.day === dayName);
         if (existing) return existing;
       }
@@ -209,7 +215,7 @@ Each object must have:
       const assignment = parsedAssignments.find((a) => a.day === dayName);
       let selectedRecipe = assignment ? candidateMap.get(String(assignment.recipeId)) : null;
 
-      // Fallback if recipeId was invalid or hallucinated
+      // Fallback if recipeId was invalid or missing
       if (!selectedRecipe) {
         selectedRecipe = activePool[idx % activePool.length];
       }
@@ -223,7 +229,7 @@ Each object must have:
       menu: assembledMenu,
     });
   } catch (error) {
-    console.error('Meal plan generation error:', error);
+    console.error('Gemini meal plan generation error:', error);
     // On error, keep existing menu or fall back gracefully
     const fallbackMenu = buildDeterministicMenu({
       candidates: getCuratedRecipes(),
@@ -243,9 +249,6 @@ Each object must have:
   }
 }
 
-/**
- * Format a recipe candidate into the frontend MenuItem shape
- */
 function formatMenuItemFromRecipe(recipe, day, subName) {
   const ingredients = (recipe.extendedIngredients || []).map((ing) => ({
     name: ing.name || ing.original || 'Ingredient',
@@ -269,20 +272,15 @@ function formatMenuItemFromRecipe(recipe, day, subName) {
   };
 }
 
-/**
- * Deterministic menu builder when Claude is not configured
- */
 function buildDeterministicMenu({ candidates, existingMenu = [], lockedDays = [], swapDay = null, cookingTimePreferences = 45 }) {
   const daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
   return daysOfWeek.map((dayName, idx) => {
-    // If locked and not swapping this day, preserve
     if (lockedDays.includes(dayName) && swapDay !== dayName) {
       const existing = existingMenu.find((m) => m.day === dayName);
       if (existing) return existing;
     }
 
-    // Pick candidate avoiding repeats
     const recipe = candidates[(idx + (swapDay === dayName ? 3 : 0)) % candidates.length];
     return formatMenuItemFromRecipe(recipe, dayName);
   });

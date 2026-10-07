@@ -53,7 +53,7 @@ export function GenerateMenuModal({
                 Generate Weekly Menu
               </h2>
               <p className="text-xs text-stone-500">
-                Claude Messages API & Spoonacular Recipe Engine
+                Gemini 3.8 Flash & Spoonacular Recipe Engine
               </p>
             </div>
           </div>
@@ -140,7 +140,7 @@ export function GenerateMenuModal({
 
           <div className="p-3 bg-stone-50 rounded-xl border border-stone-200/70 text-xs text-stone-600 space-y-1.5 leading-relaxed">
             <p>1. Retrieves verified recipes from Spoonacular filtered by selected cuisines & cooking time.</p>
-            <p>2. Prompts Claude via official Anthropic SDK to arrange recipes without hallucinations or allergen conflicts.</p>
+            <p>2. Prompts Gemini via official @google/genai SDK with structured output validation (no hallucinated recipe IDs).</p>
             <p>3. Recalculates exact grocery weights with household portion scaling and pantry stock deductions.</p>
           </div>
         </div>
@@ -163,7 +163,7 @@ export function GenerateMenuModal({
             {isGenerating ? (
               <>
                 <RotateCw className="w-3.5 h-3.5 animate-spin" />
-                <span>Consulting Claude & Spoonacular...</span>
+                <span>Consulting Gemini & Spoonacular...</span>
               </>
             ) : (
               <>

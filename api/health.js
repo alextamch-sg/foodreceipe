@@ -1,14 +1,13 @@
 /**
  * /api/health.js
- * Checks whether Spoonacular and Claude APIs are working.
+ * Checks whether Spoonacular and Gemini APIs are working using lightweight authenticated requests.
  * Compatible with Vercel serverless functions and Express/Node.
  */
 
-import Anthropic from '@anthropic-ai/sdk';
+import { GoogleGenAI } from '@google/genai';
 import { fetchWithTimeout, sanitizeErrorMessage } from '../lib/api-client.js';
 
 export default async function handler(req, res) {
-  // Ensure res has standard helper methods if running in pure Node http
   if (typeof res.status !== 'function') {
     res.status = function (code) {
       res.statusCode = code;
@@ -32,7 +31,7 @@ export default async function handler(req, res) {
         responseTimeMs: null,
         error: null,
       },
-      claude: {
+      gemini: {
         status: 'not_configured',
         responseTimeMs: null,
         error: null,
@@ -56,9 +55,9 @@ export default async function handler(req, res) {
       } else {
         results.providers.spoonacular.status = 'error';
         if (spoonRes.status === 401 || spoonRes.status === 403) {
-          results.providers.spoonacular.error = 'Invalid API key or unauthorized';
+          results.providers.spoonacular.error = 'Invalid Spoonacular API key or unauthorized';
         } else if (spoonRes.status === 402) {
-          results.providers.spoonacular.error = 'API daily quota limit reached';
+          results.providers.spoonacular.error = 'Spoonacular API daily quota limit reached';
         } else {
           results.providers.spoonacular.error = `HTTP ${spoonRes.status}: ${spoonRes.statusText}`;
         }
@@ -70,41 +69,52 @@ export default async function handler(req, res) {
     }
   }
 
-  // 2. Check Claude / Anthropic API
-  const anthropicKey = process.env.ANTHROPIC_API_KEY;
-  const anthropicModel = process.env.ANTHROPIC_MODEL || 'claude-3-5-haiku-20241022';
-
-  if (!anthropicKey) {
-    results.providers.claude.status = 'not_configured';
+  // 2. Check Gemini API
+  const geminiKey = process.env.GEMINI_API_KEY;
+  if (!geminiKey) {
+    results.providers.gemini.status = 'not_configured';
   } else {
-    const claudeStart = Date.now();
+    const geminiStart = Date.now();
     try {
-      const anthropic = new Anthropic({
-        apiKey: anthropicKey,
-        timeout: 5000,
+      const ai = new GoogleGenAI({
+        apiKey: geminiKey,
+        httpOptions: {
+          headers: {
+            'User-Agent': 'aistudio-build',
+          },
+        },
       });
 
-      // Lightweight test request
-      await anthropic.messages.create({
-        model: anthropicModel,
-        max_tokens: 1,
-        messages: [{ role: 'user', content: 'health_check' }],
+      let timer;
+      const timeoutPromise = new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error('Gemini health check timed out after 5000ms')), 5000);
       });
 
-      results.providers.claude.responseTimeMs = Date.now() - claudeStart;
-      results.providers.claude.status = 'ok';
+      const requestPromise = ai.models.generateContent({
+        model: 'gemini-3.8-flash',
+        contents: 'health_check_ping',
+        config: {
+          maxOutputTokens: 5,
+        },
+      });
+
+      await Promise.race([requestPromise, timeoutPromise]);
+      clearTimeout(timer);
+
+      results.providers.gemini.responseTimeMs = Date.now() - geminiStart;
+      results.providers.gemini.status = 'ok';
     } catch (err) {
-      results.providers.claude.responseTimeMs = Date.now() - claudeStart;
-      results.providers.claude.status = 'error';
-      results.providers.claude.error = sanitizeErrorMessage(err);
+      results.providers.gemini.responseTimeMs = Date.now() - geminiStart;
+      results.providers.gemini.status = 'error';
+      results.providers.gemini.error = sanitizeErrorMessage(err);
     }
   }
 
   // Determine overall status and HTTP response code
   const isSpoonOk = results.providers.spoonacular.status === 'ok';
-  const isClaudeOk = results.providers.claude.status === 'ok';
+  const isGeminiOk = results.providers.gemini.status === 'ok';
 
-  if (isSpoonOk && isClaudeOk) {
+  if (isSpoonOk && isGeminiOk) {
     results.status = 'healthy';
     return res.status(200).json(results);
   } else {

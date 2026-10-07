@@ -94,7 +94,7 @@ export interface ApiHealthResponse {
   timestamp: string;
   providers: {
     spoonacular: ApiProviderHealth;
-    claude: ApiProviderHealth;
+    gemini: ApiProviderHealth;
   };
 }
 

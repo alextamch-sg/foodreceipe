@@ -67,7 +67,7 @@ export function ApiHealthModal({
                 API Integration Health
               </h2>
               <p className="text-xs text-stone-500">
-                Live verification of Spoonacular & Claude APIs
+                Live verification of Spoonacular & Gemini APIs
               </p>
             </div>
           </div>
@@ -113,30 +113,30 @@ export function ApiHealthModal({
             </p>
           </div>
 
-          {/* Claude / Anthropic API */}
+          {/* Gemini API */}
           <div className="p-4 bg-white border border-stone-200 rounded-xl shadow-2xs">
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">
                 <Server className="w-4 h-4 text-stone-600" />
                 <span className="text-sm font-bold text-stone-800">
-                  Claude Messages API (Anthropic SDK)
+                  Gemini API (@google/genai SDK)
                 </span>
               </div>
               {health ? (
                 renderStatusBadge(
-                  health.providers.claude.status,
-                  health.providers.claude.responseTimeMs
+                  health.providers.gemini.status,
+                  health.providers.gemini.responseTimeMs
                 )
               ) : (
                 <span className="text-xs text-stone-400">Not checked</span>
               )}
             </div>
             <p className="text-xs text-stone-500">
-              {health?.providers.claude.status === 'ok'
-                ? 'Authenticated and ready for AI weekly menu optimization.'
-                : health?.providers.claude.status === 'not_configured'
-                ? 'ANTHROPIC_API_KEY is not set in environment. App uses structured local constraint planner.'
-                : health?.providers.claude.error || 'Click "Check APIs" below to verify status.'}
+              {health?.providers.gemini.status === 'ok'
+                ? 'Authenticated with server-side GEMINI_API_KEY (gemini-3.8-flash model ready).'
+                : health?.providers.gemini.status === 'not_configured'
+                ? 'GEMINI_API_KEY is not set in environment. App uses structured local constraint planner.'
+                : health?.providers.gemini.error || 'Click "Check APIs" below to verify status.'}
             </p>
           </div>
         </div>

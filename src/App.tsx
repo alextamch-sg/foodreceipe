@@ -106,7 +106,7 @@ export default function App() {
       const data = await res.json();
       setHealthStatus(data);
       if (res.status === 200) {
-        setToastMessage('APIs check passed: Spoonacular & Claude operational!');
+        setToastMessage('APIs check passed: Spoonacular & Gemini operational!');
       } else {
         setToastMessage('API check completed: Demo mode active (keys unconfigured).');
       }
@@ -116,7 +116,7 @@ export default function App() {
         timestamp: new Date().toISOString(),
         providers: {
           spoonacular: { status: 'error', responseTimeMs: null, error: err.message },
-          claude: { status: 'error', responseTimeMs: null, error: err.message },
+          gemini: { status: 'error', responseTimeMs: null, error: err.message },
         },
       });
       setToastMessage('API check request failed to connect.');
@@ -202,8 +202,8 @@ export default function App() {
           setIsDemoMode(false);
           setToastMessage(
             swapDay
-              ? `Replaced ${swapDay}'s recipe via Claude & Spoonacular!`
-              : 'Weekly menu optimized via Claude Messages API & Spoonacular!'
+              ? `Replaced ${swapDay}'s recipe via Gemini & Spoonacular!`
+              : 'Weekly menu optimized via Gemini & Spoonacular!'
           );
         }
 
