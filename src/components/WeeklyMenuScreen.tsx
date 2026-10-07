@@ -6,12 +6,12 @@ import {
   Clock,
   Sparkles,
   Users,
-  CheckCircle2,
   ShoppingCart,
   ChevronRight,
-  Flame,
   ChefHat,
   RefreshCw,
+  Lock,
+  Unlock,
 } from 'lucide-react';
 
 interface WeeklyMenuScreenProps {
@@ -19,7 +19,10 @@ interface WeeklyMenuScreenProps {
   preferences: HouseholdPreferences;
   onGenerateClick: () => void;
   onViewShoppingList: () => void;
-  onSwapMeal?: (mealId: string) => void;
+  onSwapMeal?: (dayName: string) => void;
+  onToggleLockDay?: (dayName: string) => void;
+  onRegenerateUnlocked?: () => void;
+  isLoading?: boolean;
 }
 
 export function WeeklyMenuScreen({
@@ -28,6 +31,9 @@ export function WeeklyMenuScreen({
   onGenerateClick,
   onViewShoppingList,
   onSwapMeal,
+  onToggleLockDay,
+  onRegenerateUnlocked,
+  isLoading = false,
 }: WeeklyMenuScreenProps) {
   const [selectedDay, setSelectedDay] = useState<string>('Wednesday');
 
@@ -35,10 +41,12 @@ export function WeeklyMenuScreen({
 
   const totalMultiplier = preferences.members.reduce((acc, m) => {
     let mult = 1.0;
-    if (m.appetite === 'Small') mult = 0.5;
+    if (m.appetite === 'Small') mult = (m.name.includes('Leo') || m.name.includes('Child')) ? 0.5 : 0.8;
     else if (m.appetite === 'Big') mult = 1.25;
     return acc + mult;
   }, 0);
+
+  const lockedCount = menuItems.filter((m) => m.isLocked).length;
 
   return (
     <div className="pb-28 pt-6 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -61,7 +69,18 @@ export function WeeklyMenuScreen({
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5 flex-wrap">
+          {onRegenerateUnlocked && (
+            <button
+              onClick={onRegenerateUnlocked}
+              disabled={isLoading}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-stone-700 bg-white border border-stone-200 rounded-lg hover:bg-stone-50 shadow-2xs transition-colors disabled:opacity-60"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 text-stone-500 ${isLoading ? 'animate-spin' : ''}`} />
+              <span>Regenerate Unlocked ({7 - lockedCount})</span>
+            </button>
+          )}
+
           <button
             onClick={onViewShoppingList}
             className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-stone-700 bg-white border border-stone-200 rounded-lg hover:bg-stone-50 shadow-2xs transition-colors"
@@ -69,9 +88,11 @@ export function WeeklyMenuScreen({
             <ShoppingCart className="w-3.5 h-3.5 text-stone-500" />
             Consolidated Shopping List
           </button>
+
           <button
             onClick={onGenerateClick}
-            className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-[#233F33] hover:bg-[#192F26] rounded-lg shadow-2xs transition-all active:scale-[0.98]"
+            disabled={isLoading}
+            className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-[#233F33] hover:bg-[#192F26] rounded-lg shadow-2xs transition-all active:scale-[0.98] disabled:opacity-60"
           >
             <Sparkles className="w-3.5 h-3.5 text-emerald-300" />
             Generate New Rotation
@@ -84,33 +105,60 @@ export function WeeklyMenuScreen({
         {menuItems.map((item) => {
           const isSelected = item.day === selectedDay;
           return (
-            <button
+            <div
               key={item.id}
-              onClick={() => setSelectedDay(item.day)}
-              className={`p-3 rounded-xl border text-left transition-all relative overflow-hidden ${
+              className={`p-3 rounded-xl border text-left transition-all relative overflow-hidden flex flex-col justify-between ${
                 isSelected
                   ? 'bg-white border-[#233F33] ring-2 ring-[#233F33]/20 shadow-xs'
                   : 'bg-white/70 border-stone-200 hover:border-stone-300 hover:bg-white'
               }`}
             >
-              <div className="flex items-center justify-between text-xs font-semibold text-stone-500 mb-1">
-                <span>{item.day.slice(0, 3)}</span>
-                <span className="text-[10px] text-stone-400 font-mono">
-                  {item.prepTimeMinutes}m
-                </span>
-              </div>
-              <p
-                className={`text-xs font-bold line-clamp-1 leading-snug ${
-                  isSelected ? 'text-[#1F3329]' : 'text-stone-800'
-                }`}
+              <div
+                onClick={() => setSelectedDay(item.day)}
+                className="cursor-pointer"
               >
-                {item.mealName.split('&')[0]}
-              </p>
-              <div className="mt-2 flex items-center gap-1 text-[10px] text-stone-400">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                <span>{item.cuisine.split(' ')[0]}</span>
+                <div className="flex items-center justify-between text-xs font-semibold text-stone-500 mb-1">
+                  <span>{item.day.slice(0, 3)}</span>
+                  <span className="text-[10px] text-stone-400 font-mono">
+                    {item.prepTimeMinutes}m
+                  </span>
+                </div>
+                <p
+                  className={`text-xs font-bold line-clamp-1 leading-snug ${
+                    isSelected ? 'text-[#1F3329]' : 'text-stone-800'
+                  }`}
+                >
+                  {item.mealName.split('&')[0]}
+                </p>
               </div>
-            </button>
+
+              <div className="mt-2.5 pt-2 border-t border-stone-100 flex items-center justify-between">
+                <span className="text-[10px] text-stone-400 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                  {item.cuisine.split(' ')[0]}
+                </span>
+
+                {onToggleLockDay && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onToggleLockDay(item.day);
+                    }}
+                    title={item.isLocked ? 'Locked (will not change during generation)' : 'Unlocked'}
+                    className={`p-1 rounded hover:bg-stone-100 transition-colors ${
+                      item.isLocked ? 'text-[#233F33]' : 'text-stone-400 hover:text-stone-600'
+                    }`}
+                  >
+                    {item.isLocked ? (
+                      <Lock className="w-3 h-3 text-[#233F33]" />
+                    ) : (
+                      <Unlock className="w-3 h-3 text-stone-300 hover:text-stone-500" />
+                    )}
+                  </button>
+                )}
+              </div>
+            </div>
           );
         })}
       </div>
@@ -135,13 +183,18 @@ export function WeeklyMenuScreen({
                 <span className="px-2.5 py-1 bg-[#233F33]/90 backdrop-blur-xs text-emerald-200 rounded-full text-xs font-bold shadow-2xs">
                   {selectedMeal.cuisine}
                 </span>
+                {selectedMeal.isLocked && (
+                  <span className="px-2 py-1 bg-amber-500/90 text-white rounded-full text-xs font-bold shadow-2xs flex items-center gap-1">
+                    <Lock className="w-3 h-3" /> Locked
+                  </span>
+                )}
               </div>
             </div>
 
             {/* Details Content */}
             <div className="lg:col-span-7 p-6 sm:p-8 flex flex-col justify-between">
               <div>
-                <div className="flex items-center gap-3 text-xs text-stone-500 mb-2 font-mono">
+                <div className="flex items-center gap-3 text-xs text-stone-500 mb-2 font-mono flex-wrap">
                   <span className="flex items-center gap-1 font-semibold text-stone-700">
                     <Clock className="w-3.5 h-3.5 text-stone-500" />
                     {selectedMeal.prepTimeMinutes} mins prep
@@ -208,24 +261,49 @@ export function WeeklyMenuScreen({
               </div>
 
               {/* Action row */}
-              <div className="pt-4 border-t border-stone-200 flex items-center justify-between gap-4">
+              <div className="pt-4 border-t border-stone-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div className="flex items-center gap-1.5 text-xs text-stone-500">
-                  <ChefHat className="w-4 h-4 text-stone-400" />
+                  <ChefHat className="w-4 h-4 text-stone-400 shrink-0" />
                   <span>
                     Respects all household allergy & kid-mild restrictions
                   </span>
                 </div>
 
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => {
-                      if (onSwapMeal) onSwapMeal(selectedMeal.id);
-                    }}
-                    className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-stone-700 bg-stone-100 hover:bg-stone-200 rounded-lg transition-colors"
-                  >
-                    <RefreshCw className="w-3.5 h-3.5" />
-                    Swap Recipe
-                  </button>
+                <div className="flex items-center gap-2 self-end sm:self-center">
+                  {onToggleLockDay && (
+                    <button
+                      onClick={() => onToggleLockDay(selectedMeal.day)}
+                      className={`inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors border ${
+                        selectedMeal.isLocked
+                          ? 'bg-amber-50 text-amber-800 border-amber-200'
+                          : 'bg-white text-stone-700 border-stone-200 hover:bg-stone-50'
+                      }`}
+                    >
+                      {selectedMeal.isLocked ? (
+                        <>
+                          <Lock className="w-3.5 h-3.5" />
+                          <span>Locked</span>
+                        </>
+                      ) : (
+                        <>
+                          <Unlock className="w-3.5 h-3.5 text-stone-400" />
+                          <span>Lock Meal</span>
+                        </>
+                      )}
+                    </button>
+                  )}
+
+                  {onSwapMeal && (
+                    <button
+                      onClick={() => onSwapMeal(selectedMeal.day)}
+                      disabled={isLoading}
+                      className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-stone-700 bg-stone-100 hover:bg-stone-200 rounded-lg transition-colors disabled:opacity-60"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+                      Swap Recipe
+                    </button>
+                  )}
+
                   <button
                     onClick={onViewShoppingList}
                     className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-white bg-[#233F33] hover:bg-[#192F26] rounded-lg shadow-2xs transition-colors"
@@ -249,8 +327,8 @@ export function WeeklyMenuScreen({
               Full 7-Day Dinner Calendar
             </h3>
           </div>
-          <span className="text-xs text-stone-500">
-            Total Est. Prep: ~235 mins / week
+          <span className="text-xs text-stone-500 font-mono">
+            {lockedCount > 0 ? `${lockedCount} day(s) locked` : 'All 7 days customizable'}
           </span>
         </div>
 
@@ -264,8 +342,9 @@ export function WeeklyMenuScreen({
               }`}
             >
               <div className="flex items-center gap-4">
-                <span className="w-24 text-xs font-bold text-stone-500 uppercase tracking-wider">
+                <span className="w-24 text-xs font-bold text-stone-500 uppercase tracking-wider flex items-center gap-1.5">
                   {item.day}
+                  {item.isLocked && <Lock className="w-3 h-3 text-[#233F33]" />}
                 </span>
                 <div>
                   <h4 className="text-sm font-bold text-stone-800">
@@ -277,9 +356,9 @@ export function WeeklyMenuScreen({
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 self-end sm:self-center">
+              <div className="flex items-center gap-3 self-end sm:self-center">
                 <span className="px-2 py-0.5 bg-stone-100 text-stone-600 text-xs rounded font-mono">
-                  {item.ingredients.length} items
+                  {item.ingredients.length} ingredients
                 </span>
                 <ChevronRight className="w-4 h-4 text-stone-400" />
               </div>

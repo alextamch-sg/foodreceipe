@@ -4,7 +4,14 @@
  */
 
 import { useState, useEffect } from 'react';
-import { TabType, ShoppingItem, CategoryGroup, HouseholdPreferences, MenuItem } from './types';
+import {
+  TabType,
+  ShoppingItem,
+  CategoryGroup,
+  HouseholdPreferences,
+  MenuItem,
+  ApiHealthResponse,
+} from './types';
 import {
   initialCategories,
   initialPreferences,
@@ -17,7 +24,9 @@ import { WeeklyMenuScreen } from './components/WeeklyMenuScreen';
 import { AddCustomItemModal } from './components/AddCustomItemModal';
 import { EditQtyModal } from './components/EditQtyModal';
 import { GenerateMenuModal } from './components/GenerateMenuModal';
+import { ApiHealthModal } from './components/ApiHealthModal';
 import { Toast } from './components/Toast';
+import { consolidateShoppingList } from '../lib/grocery-calculator.js';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabType>('shopping');
@@ -59,11 +68,21 @@ export default function App() {
     return initialWeeklyMenu;
   });
 
-  // Modal states
+  // Modal and dialog states
   const [isAddCustomOpen, setIsAddCustomOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<ShoppingItem | null>(null);
   const [isGenerateOpen, setIsGenerateOpen] = useState(false);
+  const [isHealthOpen, setIsHealthOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // API Generation states
+  const [isGeneratingMenu, setIsGeneratingMenu] = useState(false);
+  const [generationError, setGenerationError] = useState<string | null>(null);
+  const [isDemoMode, setIsDemoMode] = useState(false);
+
+  // API Health states
+  const [healthStatus, setHealthStatus] = useState<ApiHealthResponse | null>(null);
+  const [isHealthLoading, setIsHealthLoading] = useState(false);
 
   // Sync to local storage
   useEffect(() => {
@@ -77,6 +96,145 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('heirloom_menu', JSON.stringify(weeklyMenu));
   }, [weeklyMenu]);
+
+  // Check APIs health endpoint
+  const handleCheckApis = async () => {
+    setIsHealthLoading(true);
+    setIsHealthOpen(true);
+    try {
+      const res = await fetch('/api/health');
+      const data = await res.json();
+      setHealthStatus(data);
+      if (res.status === 200) {
+        setToastMessage('APIs check passed: Spoonacular & Claude operational!');
+      } else {
+        setToastMessage('API check completed: Demo mode active (keys unconfigured).');
+      }
+    } catch (err: any) {
+      setHealthStatus({
+        status: 'unhealthy',
+        timestamp: new Date().toISOString(),
+        providers: {
+          spoonacular: { status: 'error', responseTimeMs: null, error: err.message },
+          claude: { status: 'error', responseTimeMs: null, error: err.message },
+        },
+      });
+      setToastMessage('API check request failed to connect.');
+    } finally {
+      setIsHealthLoading(false);
+    }
+  };
+
+  // Generate Weekly Menu from /api/meal-plan
+  const handleGenerateMealPlan = async (swapDay?: string) => {
+    setIsGeneratingMenu(true);
+    setGenerationError(null);
+
+    try {
+      const lockedDays = weeklyMenu
+        .filter((m) => m.isLocked && m.day !== swapDay)
+        .map((m) => m.day);
+
+      const payload = {
+        householdSize: { adults: preferences.adults, children: preferences.children },
+        appetiteSettings: preferences.members,
+        dietaryRestrictions: preferences.dietaryRestrictions,
+        dislikedIngredients: preferences.dislikedIngredients,
+        cookingTimePreferences: preferences.maxCookingTime,
+        primaryCuisines: preferences.primaryCuisines.filter((c) => c.active).map((c) => c.name),
+        lockedDays,
+        existingMenu: weeklyMenu,
+        swapDay: swapDay || null,
+      };
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 20000);
+
+      const response = await fetch('/api/meal-plan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      const data = await response.json();
+
+      if (data.menu && Array.isArray(data.menu)) {
+        // Preserve lock flags
+        const nextMenu: MenuItem[] = data.menu.map((m: MenuItem) => {
+          const oldMeal = weeklyMenu.find((o) => o.day === m.day);
+          return {
+            ...m,
+            isLocked: oldMeal?.isLocked || false,
+          };
+        });
+
+        setWeeklyMenu(nextMenu);
+
+        // Recalculate shopping list from new weekly menu & preferences
+        // Preserve any custom items user added
+        const customItems = categories
+          .flatMap((c) => c.items)
+          .filter((i) => i.id.startsWith('item-custom-'));
+
+        const newConsolidated = consolidateShoppingList(nextMenu, preferences, categories);
+
+        if (customItems.length > 0) {
+          // Merge custom items into respective categories
+          customItems.forEach((custom) => {
+            const cat = newConsolidated.find((c: CategoryGroup) => c.id === custom.category);
+            if (cat) cat.items.unshift(custom);
+          });
+        }
+
+        setCategories(newConsolidated);
+
+        if (data.isDemo) {
+          setIsDemoMode(true);
+          setToastMessage(
+            swapDay
+              ? `Replaced ${swapDay}'s dinner with curated recipe candidate.`
+              : 'Weekly menu generated using curated culinary catalog (Demo Mode).'
+          );
+        } else {
+          setIsDemoMode(false);
+          setToastMessage(
+            swapDay
+              ? `Replaced ${swapDay}'s recipe via Claude & Spoonacular!`
+              : 'Weekly menu optimized via Claude Messages API & Spoonacular!'
+          );
+        }
+
+        setIsGenerateOpen(false);
+      } else {
+        throw new Error(data.error || 'Failed to assemble weekly menu');
+      }
+    } catch (err: any) {
+      console.error('Menu generation error:', err);
+      const errMsg = err.name === 'AbortError' ? 'Request timed out after 20s' : (err.message || 'Service unavailable');
+      setGenerationError(errMsg);
+      setToastMessage(`Notice: ${errMsg}. Current menu kept safely.`);
+    } finally {
+      setIsGeneratingMenu(false);
+    }
+  };
+
+  // Toggle lock status on a meal
+  const handleToggleLockDay = (dayName: string) => {
+    setWeeklyMenu((prev) =>
+      prev.map((item) =>
+        item.day === dayName ? { ...item, isLocked: !item.isLocked } : item
+      )
+    );
+    const target = weeklyMenu.find((m) => m.day === dayName);
+    setToastMessage(
+      target?.isLocked
+        ? `Unlocked ${dayName}'s dinner for regeneration.`
+        : `Locked ${dayName}'s dinner. It will remain untouched when generating.`
+    );
+  };
 
   // Shopping list item toggling
   const handleToggleItem = (itemId: string) => {
@@ -175,10 +333,8 @@ export default function App() {
     const text = lines.join('\n');
     navigator.clipboard.writeText(text);
 
-    // Also offer WhatsApp link
     const encoded = encodeURIComponent(text);
     const whatsappUrl = `https://wa.me/?text=${encoded}`;
-    // We copy directly and notify the user
     setToastMessage('Exported to WhatsApp! Text copied to clipboard.');
     window.open?.(whatsappUrl, '_blank');
   };
@@ -196,6 +352,24 @@ export default function App() {
     }));
   };
 
+  // Update preferences & auto-recalculate grocery list
+  const handleUpdatePreferences = (updated: HouseholdPreferences) => {
+    setPreferences(updated);
+    // Recalculate grocery list with updated portion multiplier or pantry
+    const customItems = categories
+      .flatMap((c) => c.items)
+      .filter((i) => i.id.startsWith('item-custom-'));
+
+    const recomputed = consolidateShoppingList(weeklyMenu, updated, categories);
+    if (customItems.length > 0) {
+      customItems.forEach((custom) => {
+        const cat = recomputed.find((c: CategoryGroup) => c.id === custom.category);
+        if (cat) cat.items.unshift(custom);
+      });
+    }
+    setCategories(recomputed);
+  };
+
   // Reset to original defaults
   const handleResetDefaults = () => {
     if (window.confirm('Reset all groceries and preferences to defaults?')) {
@@ -210,28 +384,6 @@ export default function App() {
     setToastMessage('Preferences successfully saved!');
   };
 
-  // Swapping a meal in weekly menu
-  const handleSwapMeal = (mealId: string) => {
-    setWeeklyMenu((prev) =>
-      prev.map((item) =>
-        item.id === mealId
-          ? {
-              ...item,
-              mealName: item.mealName.includes('Curry')
-                ? 'Cantonese Steamed Chicken with Dried Lily & Fungus'
-                : 'Braised Minced Pork & Scallion Ginger Noodles',
-              subName: 'Calibrated Seasonal Homestyle Comfort',
-            }
-          : item
-      )
-    );
-    setToastMessage('Meal rotation swapped and calibrated!');
-  };
-
-  const handleApplyMenuRotation = () => {
-    setToastMessage('New weekly rotation applied to shopping list!');
-  };
-
   // Count of unchecked shopping items
   const activeCartCount = categories.flatMap((c) => c.items).filter((i) => !i.isChecked).length;
 
@@ -243,8 +395,12 @@ export default function App() {
         setActiveTab={setActiveTab}
         onGenerateClick={() => setIsGenerateOpen(true)}
         onRefreshClick={() => {
+          // Re-sync menu & grocery list
+          const recomputed = consolidateShoppingList(weeklyMenu, preferences, categories);
+          setCategories(recomputed);
           setToastMessage('Pantry inventory & recipe math synchronized!');
         }}
+        onCheckApisClick={handleCheckApis}
         cartCount={activeCartCount}
       />
 
@@ -267,7 +423,7 @@ export default function App() {
         {activeTab === 'preferences' && (
           <PreferencesScreen
             preferences={preferences}
-            onUpdatePreferences={(updated) => setPreferences(updated)}
+            onUpdatePreferences={handleUpdatePreferences}
             onSavePreferences={handleSavePreferences}
             onResetDefaults={handleResetDefaults}
           />
@@ -279,12 +435,15 @@ export default function App() {
             preferences={preferences}
             onGenerateClick={() => setIsGenerateOpen(true)}
             onViewShoppingList={() => setActiveTab('shopping')}
-            onSwapMeal={handleSwapMeal}
+            onSwapMeal={(dayName) => handleGenerateMealPlan(dayName)}
+            onToggleLockDay={handleToggleLockDay}
+            onRegenerateUnlocked={() => handleGenerateMealPlan()}
+            isLoading={isGeneratingMenu}
           />
         )}
       </main>
 
-      {/* Modals & Toasts */}
+      {/* Modals & Dialogs */}
       <AddCustomItemModal
         isOpen={isAddCustomOpen}
         onClose={() => setIsAddCustomOpen(false)}
@@ -303,7 +462,18 @@ export default function App() {
         isOpen={isGenerateOpen}
         onClose={() => setIsGenerateOpen(false)}
         preferences={preferences}
-        onApplyRotation={handleApplyMenuRotation}
+        onGenerate={() => handleGenerateMealPlan()}
+        isGenerating={isGeneratingMenu}
+        error={generationError}
+        isDemo={isDemoMode}
+      />
+
+      <ApiHealthModal
+        isOpen={isHealthOpen}
+        onClose={() => setIsHealthOpen(false)}
+        health={healthStatus}
+        isLoading={isHealthLoading}
+        onCheck={handleCheckApis}
       />
 
       <Toast message={toastMessage} onClose={() => setToastMessage(null)} />

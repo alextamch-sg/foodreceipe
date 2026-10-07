@@ -1,11 +1,12 @@
 import { TabType } from '../types';
-import { RefreshCw, Bell, FileText, Sparkles } from 'lucide-react';
+import { RefreshCw, Bell, FileText, Sparkles, Activity } from 'lucide-react';
 
 interface HeaderProps {
   activeTab: TabType;
   setActiveTab: (tab: TabType) => void;
   onGenerateClick: () => void;
   onRefreshClick: () => void;
+  onCheckApisClick: () => void;
   cartCount: number;
 }
 
@@ -14,6 +15,7 @@ export function Header({
   setActiveTab,
   onGenerateClick,
   onRefreshClick,
+  onCheckApisClick,
   cartCount,
 }: HeaderProps) {
   return (
@@ -85,6 +87,15 @@ export function Header({
         {/* Right Actions */}
         <div className="flex items-center gap-2 sm:gap-3">
           <button
+            onClick={onCheckApisClick}
+            title="Check Spoonacular & Claude APIs health"
+            className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-stone-600 bg-stone-50 hover:bg-stone-100 border border-stone-200/80 rounded-lg transition-colors"
+          >
+            <Activity className="w-3.5 h-3.5 text-emerald-600" />
+            <span>Check APIs</span>
+          </button>
+
+          <button
             onClick={onRefreshClick}
             title="Sync inventory & recipes"
             className="p-2 text-stone-500 hover:text-stone-800 hover:bg-stone-100 rounded-lg transition-colors"
@@ -103,7 +114,7 @@ export function Header({
           {activeTab !== 'shopping' && (
             <button
               onClick={() => setActiveTab('shopping')}
-              className="hidden sm:inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-stone-700 bg-white border border-stone-200 rounded-lg hover:bg-stone-50 shadow-2xs transition-colors"
+              className="hidden lg:inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-stone-700 bg-white border border-stone-200 rounded-lg hover:bg-stone-50 shadow-2xs transition-colors"
             >
               <FileText className="w-3.5 h-3.5 text-stone-500" />
               View Shopping List
@@ -163,7 +174,15 @@ export function Header({
         >
           Household & Preferences
         </button>
+        <button
+          onClick={onCheckApisClick}
+          className="px-2.5 py-1 text-xs rounded-md whitespace-nowrap text-stone-600 bg-stone-100 flex items-center gap-1"
+        >
+          <Activity className="w-3 h-3 text-emerald-600" />
+          Check APIs
+        </button>
       </div>
     </header>
   );
 }
+

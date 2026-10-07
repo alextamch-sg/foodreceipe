@@ -69,6 +69,7 @@ export interface HouseholdPreferences {
 
 export interface MenuItem {
   id: string;
+  recipeId?: string;
   day: string;
   mealName: string;
   subName: string;
@@ -78,5 +79,22 @@ export interface MenuItem {
   image: string;
   tags: string[];
   servings: number;
+  isLocked?: boolean;
   ingredients: { name: string; qty: string; status: 'in-pantry' | 'buy' }[];
 }
+
+export interface ApiProviderHealth {
+  status: 'ok' | 'error' | 'not_configured';
+  responseTimeMs: number | null;
+  error: string | null;
+}
+
+export interface ApiHealthResponse {
+  status: 'healthy' | 'unhealthy';
+  timestamp: string;
+  providers: {
+    spoonacular: ApiProviderHealth;
+    claude: ApiProviderHealth;
+  };
+}
+
