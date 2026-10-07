@@ -84,8 +84,12 @@ export interface MenuItem {
 }
 
 export interface ApiProviderHealth {
-  status: 'ok' | 'error' | 'not_configured';
+  status: 'ok' | 'degraded' | 'error' | 'not_configured';
   responseTimeMs: number | null;
+  upstreamHttpStatus?: number | null;
+  authVerified?: boolean;
+  generationVerified?: boolean;
+  model?: string;
   error: string | null;
 }
 

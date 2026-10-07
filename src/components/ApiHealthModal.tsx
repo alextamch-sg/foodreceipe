@@ -28,13 +28,23 @@ export function ApiHealthModal({
 }: ApiHealthModalProps) {
   if (!isOpen) return null;
 
-  const renderStatusBadge = (status: 'ok' | 'error' | 'not_configured', responseTime: number | null) => {
+  const renderStatusBadge = (
+    status: 'ok' | 'degraded' | 'error' | 'not_configured',
+    responseTime: number | null
+  ) => {
     switch (status) {
       case 'ok':
         return (
           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-md text-xs font-semibold">
             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
             Operational {responseTime !== null && `(${responseTime}ms)`}
+          </span>
+        );
+      case 'degraded':
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-amber-50 text-amber-800 border border-amber-200 rounded-md text-xs font-semibold">
+            <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+            Degraded (503 High Demand)
           </span>
         );
       case 'not_configured':
@@ -131,9 +141,46 @@ export function ApiHealthModal({
                 <span className="text-xs text-stone-400">Not checked</span>
               )}
             </div>
+
+            {/* Sub-diagnostic verification badges */}
+            {health && health.providers.gemini.status !== 'not_configured' && (
+              <div className="flex flex-wrap items-center gap-1.5 mb-2">
+                <span
+                  className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${
+                    health.providers.gemini.authVerified
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                      : 'bg-rose-50 text-rose-700 border-rose-200'
+                  }`}
+                >
+                  Auth: {health.providers.gemini.authVerified ? 'Verified ✓' : 'Failed ✕'}
+                </span>
+                <span
+                  className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${
+                    health.providers.gemini.generationVerified
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                      : health.providers.gemini.status === 'degraded'
+                      ? 'bg-amber-50 text-amber-700 border-amber-200'
+                      : 'bg-rose-50 text-rose-700 border-rose-200'
+                  }`}
+                >
+                  Generation: {health.providers.gemini.generationVerified ? 'Verified ✓' : 'Pending / Degraded'}
+                </span>
+                {health.providers.gemini.upstreamHttpStatus && (
+                  <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-stone-100 text-stone-700 border border-stone-200">
+                    HTTP {health.providers.gemini.upstreamHttpStatus}
+                  </span>
+                )}
+                {health.providers.gemini.model && (
+                  <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-stone-100 text-stone-600 border border-stone-200">
+                    {health.providers.gemini.model}
+                  </span>
+                )}
+              </div>
+            )}
+
             <p className="text-xs text-stone-500">
               {health?.providers.gemini.status === 'ok'
-                ? 'Authenticated with server-side GEMINI_API_KEY (gemini-3.8-flash model ready).'
+                ? 'Authenticated and verified live generation with Gemini.'
                 : health?.providers.gemini.status === 'not_configured'
                 ? 'GEMINI_API_KEY is not set in environment. App uses structured local constraint planner.'
                 : health?.providers.gemini.error || 'Click "Check APIs" below to verify status.'}

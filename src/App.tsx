@@ -103,6 +103,10 @@ export default function App() {
     setIsHealthOpen(true);
     try {
       const res = await fetch('/api/health');
+      const contentType = res.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        throw new Error(`Endpoint returned non-JSON (status ${res.status}). Check Vercel API routing.`);
+      }
       const data = await res.json();
       setHealthStatus(data);
       if (res.status === 200) {
@@ -119,7 +123,7 @@ export default function App() {
           gemini: { status: 'error', responseTimeMs: null, error: err.message },
         },
       });
-      setToastMessage('API check request failed to connect.');
+      setToastMessage(`API check notice: ${err.message || 'Cannot connect to endpoint'}`);
     } finally {
       setIsHealthLoading(false);
     }
@@ -158,6 +162,11 @@ export default function App() {
       });
 
       clearTimeout(timeoutId);
+
+      const contentType = response.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        throw new Error(`Server returned HTML/non-JSON (${response.status}). Check Vercel API routing.`);
+      }
 
       const data = await response.json();
 

@@ -1,0 +1,17 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "vite",
+  "buildCommand": "vite build",
+  "outputDirectory": "dist",
+  "functions": {
+    "api/*.js": {
+      "includeFiles": "lib/**"
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/((?!api/|api$).*)",
+      "destination": "/index.html"
+    }
+  ]
+}

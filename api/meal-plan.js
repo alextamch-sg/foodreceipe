@@ -1,7 +1,7 @@
 /**
  * /api/meal-plan.js
  * Generates an optimized 7-day family weekly menu rotation using Gemini (@google/genai)
- * and Spoonacular recipe candidates.
+ * and Spoonacular recipe candidates with resilient multi-tier model fallback.
  * Compatible with Vercel serverless functions and Express/Node.
  */
 
@@ -162,41 +162,64 @@ export default async function handler(req, res) {
       })),
     };
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.8-flash',
-      contents: `Arrange the weekly menu for this household using the available recipes and constraints:\n${JSON.stringify(promptPayload, null, 2)}`,
-      config: {
-        systemInstruction: `You are the master family kitchen meal planner for Heirloom Table.
+    const systemInstruction = `You are the master family kitchen meal planner for Heirloom Table.
 Your task is to assign recipes to the 7-day Monday–Sunday menu for this family.
 RULES:
 1. ONLY select recipe IDs from the "availableRecipes" list. DO NOT invent or hallucinate recipe IDs.
 2. If a day is in "lockedDays", retain the recipe from "existingMenuDays" for that day.
 3. Ensure cooking times do not exceed maxCookingMinutes.
 4. Strictly respect all dietary restrictions and disliked ingredients.
-5. Return a JSON array of 7 objects (one for each day Monday through Sunday).`,
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: Type.ARRAY,
-          items: {
-            type: Type.OBJECT,
-            properties: {
-              day: { type: Type.STRING, description: 'Day of the week (e.g. Monday)' },
-              recipeId: { type: Type.STRING, description: 'Recipe ID matching availableRecipes' },
-              subName: { type: Type.STRING, description: 'Short nutritional tagline for the family' },
-              reason: { type: Type.STRING, description: 'Brief note explaining why this fits household profile' },
-            },
-            required: ['day', 'recipeId', 'subName', 'reason'],
-          },
-        },
-      },
-    });
+5. Return a JSON array of 7 objects (one for each day Monday through Sunday).`;
 
-    const jsonText = response.text ? response.text.trim() : '';
+    const schemaConfig = {
+      type: Type.ARRAY,
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          day: { type: Type.STRING, description: 'Day of the week (e.g. Monday)' },
+          recipeId: { type: Type.STRING, description: 'Recipe ID matching availableRecipes' },
+          subName: { type: Type.STRING, description: 'Short nutritional tagline for the family' },
+          reason: { type: Type.STRING, description: 'Brief note explaining why this fits household profile' },
+        },
+        required: ['day', 'recipeId', 'subName', 'reason'],
+      },
+    };
+
+    // Try gemini-3.1-flash-lite first (fast, reliable latency), fallback to gemini-3.8-flash
+    let responseText = null;
+    let modelUsed = 'gemini-3.1-flash-lite';
+
+    try {
+      const response = await ai.models.generateContent({
+        model: 'gemini-3.1-flash-lite',
+        contents: `Arrange the weekly menu for this household using the available recipes and constraints:\n${JSON.stringify(promptPayload, null, 2)}`,
+        config: {
+          systemInstruction,
+          responseMimeType: 'application/json',
+          responseSchema: schemaConfig,
+        },
+      });
+      responseText = response.text ? response.text.trim() : '';
+    } catch (primaryErr) {
+      console.warn('Primary model gemini-3.1-flash-lite failed, trying gemini-3.8-flash:', primaryErr.message);
+      modelUsed = 'gemini-3.8-flash';
+      const fallbackResponse = await ai.models.generateContent({
+        model: 'gemini-3.8-flash',
+        contents: `Arrange the weekly menu for this household using the available recipes and constraints:\n${JSON.stringify(promptPayload, null, 2)}`,
+        config: {
+          systemInstruction,
+          responseMimeType: 'application/json',
+          responseSchema: schemaConfig,
+        },
+      });
+      responseText = fallbackResponse.text ? fallbackResponse.text.trim() : '';
+    }
+
     let parsedAssignments = [];
     try {
-      parsedAssignments = JSON.parse(jsonText);
+      parsedAssignments = JSON.parse(responseText);
     } catch (e) {
-      const match = jsonText.match(/\[[\s\S]*\]/);
+      const match = responseText.match(/\[[\s\S]*\]/);
       if (match) parsedAssignments = JSON.parse(match[0]);
     }
 
@@ -215,7 +238,7 @@ RULES:
       const assignment = parsedAssignments.find((a) => a.day === dayName);
       let selectedRecipe = assignment ? candidateMap.get(String(assignment.recipeId)) : null;
 
-      // Fallback if recipeId was invalid or missing
+      // Fallback if recipeId was invalid or hallucinated
       if (!selectedRecipe) {
         selectedRecipe = activePool[idx % activePool.length];
       }
@@ -226,6 +249,7 @@ RULES:
     return res.status(200).json({
       success: true,
       isDemo: false,
+      modelUsed,
       menu: assembledMenu,
     });
   } catch (error) {
@@ -239,9 +263,20 @@ RULES:
       cookingTimePreferences,
     });
 
+    const statusCode = error.status || error.code || 500;
+    let userMsg = sanitizeErrorMessage(error);
+    if (statusCode === 400 || statusCode === 401 || statusCode === 403) {
+      userMsg = 'Invalid Gemini credentials: API key rejected by Google (401/403).';
+    } else if (statusCode === 429) {
+      userMsg = 'Gemini quota limit reached (429). Please try again shortly.';
+    } else if (statusCode === 503) {
+      userMsg = 'Gemini model temporarily experiencing high demand (503). Retained current menu.';
+    }
+
     return res.status(200).json({
       success: false,
-      error: sanitizeErrorMessage(error),
+      error: userMsg,
+      upstreamHttpStatus: statusCode,
       fallbackUsed: true,
       isDemo: true,
       menu: fallbackMenu,
