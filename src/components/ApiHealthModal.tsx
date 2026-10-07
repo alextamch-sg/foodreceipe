@@ -152,18 +152,7 @@ export function ApiHealthModal({
                       : 'bg-rose-50 text-rose-700 border-rose-200'
                   }`}
                 >
-                  Auth: {health.providers.gemini.authVerified ? 'Verified ✓' : 'Failed ✕'}
-                </span>
-                <span
-                  className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${
-                    health.providers.gemini.generationVerified
-                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                      : health.providers.gemini.status === 'degraded'
-                      ? 'bg-amber-50 text-amber-700 border-amber-200'
-                      : 'bg-rose-50 text-rose-700 border-rose-200'
-                  }`}
-                >
-                  Generation: {health.providers.gemini.generationVerified ? 'Verified ✓' : 'Pending / Degraded'}
+                  Auth & Connectivity: {health.providers.gemini.authVerified ? 'Verified ✓' : 'Failed ✕'}
                 </span>
                 {health.providers.gemini.upstreamHttpStatus && (
                   <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-stone-100 text-stone-700 border border-stone-200">
@@ -172,7 +161,7 @@ export function ApiHealthModal({
                 )}
                 {health.providers.gemini.model && (
                   <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-stone-100 text-stone-600 border border-stone-200">
-                    {health.providers.gemini.model}
+                    Model: {health.providers.gemini.model}
                   </span>
                 )}
               </div>
@@ -180,7 +169,7 @@ export function ApiHealthModal({
 
             <p className="text-xs text-stone-500">
               {health?.providers.gemini.status === 'ok'
-                ? 'Authenticated and verified live generation with Gemini.'
+                ? (health?.providers.gemini.message || 'Authentication & connectivity verified with Gemini API.')
                 : health?.providers.gemini.status === 'not_configured'
                 ? 'GEMINI_API_KEY is not set in environment. App uses structured local constraint planner.'
                 : health?.providers.gemini.error || 'Click "Check APIs" below to verify status.'}

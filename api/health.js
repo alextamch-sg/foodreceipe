@@ -7,7 +7,7 @@
  */
 
 import { GoogleGenAI } from '@google/genai';
-import { fetchWithTimeout, sanitizeErrorMessage } from '../lib/api-client.js';
+import { fetchWithTimeout, sanitizeErrorMessage, getGeminiModel } from '../lib/api-client.js';
 
 export default async function handler(req, res) {
   // Ensure res has standard helper methods if running in pure Node http
@@ -25,6 +25,8 @@ export default async function handler(req, res) {
     };
   }
 
+  const configuredModel = getGeminiModel();
+
   const results = {
     status: 'unhealthy',
     timestamp: new Date().toISOString(),
@@ -40,9 +42,9 @@ export default async function handler(req, res) {
         upstreamHttpStatus: null,
         responseTimeMs: null,
         authVerified: false,
-        generationVerified: false,
+        message: null,
         error: null,
-        model: 'gemini-3.1-flash-lite',
+        model: configuredModel,
       },
     },
   };
@@ -80,12 +82,14 @@ export default async function handler(req, res) {
     }
   }
 
-  // 2. Check Gemini API
+  // 2. Check Gemini API via lightweight authenticated model-list request
   const geminiKey = process.env.GEMINI_API_KEY;
   if (!geminiKey) {
     results.providers.gemini.status = 'not_configured';
   } else {
     const geminiStart = Date.now();
+    let timer = null;
+
     try {
       const ai = new GoogleGenAI({
         apiKey: geminiKey,
@@ -96,77 +100,50 @@ export default async function handler(req, res) {
         },
       });
 
-      // Phase A: Test authentication by listing available models
-      let modelsListed = false;
-      try {
-        const modelList = await ai.models.list();
-        let count = 0;
+      // Lightweight authenticated model list with guaranteed timeout race
+      const timeoutPromise = new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          const timeoutErr = new Error('Gemini API health check timed out after 8000ms');
+          timeoutErr.status = 504;
+          reject(timeoutErr);
+        }, 8000);
+      });
+
+      const listPromise = (async () => {
+        const modelList = await ai.models.list({ pageSize: 1 });
         for await (const _ of modelList) {
-          count++;
-          if (count >= 1) {
-            modelsListed = true;
-            break;
-          }
+          return true;
         }
-      } catch (authErr) {
-        const authStatus = authErr.status || authErr.code || 401;
-        results.providers.gemini.upstreamHttpStatus = authStatus;
-        results.providers.gemini.status = 'error';
-        results.providers.gemini.authVerified = false;
+        return true;
+      })();
 
-        if (authStatus === 400 || authStatus === 401 || authStatus === 403) {
-          results.providers.gemini.error = 'Invalid credentials: GEMINI_API_KEY was rejected by Google API (401/403)';
-        } else if (authStatus === 429) {
-          results.providers.gemini.error = 'Quota limit reached during auth check (429).';
-        } else {
-          results.providers.gemini.error = `Authentication check failed: ${sanitizeErrorMessage(authErr)}`;
-        }
-        throw authErr;
-      }
+      await Promise.race([listPromise, timeoutPromise]);
 
-      if (modelsListed) {
-        results.providers.gemini.authVerified = true;
-      }
-
-      // Phase B: Test generation capability with lightweight ping
-      // We test gemini-3.1-flash-lite as the reliable low-latency probe
-      try {
-        const genRes = await ai.models.generateContent({
-          model: 'gemini-3.1-flash-lite',
-          contents: 'Say hi in one word',
-        });
-
-        if (genRes.text) {
-          results.providers.gemini.generationVerified = true;
-          results.providers.gemini.status = 'ok';
-          results.providers.gemini.upstreamHttpStatus = 200;
-          results.providers.gemini.responseTimeMs = Date.now() - geminiStart;
-        } else {
-          throw new Error('Empty generation response');
-        }
-      } catch (genErr) {
-        results.providers.gemini.responseTimeMs = Date.now() - geminiStart;
-        results.providers.gemini.generationVerified = false;
-        const errStatus = genErr.status || genErr.code || (genErr.message?.includes('503') ? 503 : 500);
-        results.providers.gemini.upstreamHttpStatus = errStatus;
-
-        if (errStatus === 503) {
-          // Model high demand spike, but key is 100% authenticated
-          results.providers.gemini.status = 'degraded';
-          results.providers.gemini.error = 'Authentication verified. Model generation temporarily busy (503 high demand spike).';
-        } else if (errStatus === 429) {
-          results.providers.gemini.status = 'error';
-          results.providers.gemini.error = 'Quota limit reached: Rate limit or daily quota exceeded (429).';
-        } else if (errStatus === 404) {
-          results.providers.gemini.status = 'error';
-          results.providers.gemini.error = 'Configured model not found or unsupported (404).';
-        } else {
-          results.providers.gemini.status = 'error';
-          results.providers.gemini.error = `Generation check failed (${errStatus}): ${sanitizeErrorMessage(genErr)}`;
-        }
-      }
+      results.providers.gemini.status = 'ok';
+      results.providers.gemini.authVerified = true;
+      results.providers.gemini.upstreamHttpStatus = 200;
+      results.providers.gemini.message = 'Authentication & connectivity verified';
+      results.providers.gemini.error = null;
     } catch (err) {
-      // Caught during Phase A auth
+      const errStatus = err.status || err.code || 500;
+      results.providers.gemini.upstreamHttpStatus = errStatus;
+      results.providers.gemini.status = 'error';
+      results.providers.gemini.authVerified = false;
+
+      if (errStatus === 400 || errStatus === 401 || errStatus === 403) {
+        results.providers.gemini.error = 'Invalid credentials: GEMINI_API_KEY was rejected by Google API (401/403)';
+      } else if (errStatus === 429) {
+        results.providers.gemini.error = 'Quota limit reached: Rate limit or daily quota exceeded (429).';
+      } else if (errStatus === 504) {
+        results.providers.gemini.error = 'Connection timed out while reaching Gemini API (504).';
+      } else {
+        results.providers.gemini.error = `Authentication check failed (${errStatus}): ${sanitizeErrorMessage(err)}`;
+      }
+    } finally {
+      // Ensure timeout timer cleanup ALWAYS happens in finally
+      if (timer) {
+        clearTimeout(timer);
+      }
       results.providers.gemini.responseTimeMs = Date.now() - geminiStart;
     }
   }
@@ -174,15 +151,10 @@ export default async function handler(req, res) {
   // 3. Determine Overall System Status
   const isSpoonOk = results.providers.spoonacular.status === 'ok';
   const isGeminiOk = results.providers.gemini.status === 'ok';
-  const isGeminiDegraded = results.providers.gemini.status === 'degraded';
 
   if (isSpoonOk && isGeminiOk) {
     results.status = 'healthy';
     return res.status(200).json(results);
-  } else if (isGeminiOk || (isGeminiDegraded && results.providers.gemini.authVerified)) {
-    // If Gemini is authenticated, return informative status
-    results.status = isSpoonOk ? 'healthy' : 'unhealthy';
-    return res.status(isSpoonOk ? 200 : 503).json(results);
   } else {
     results.status = 'unhealthy';
     return res.status(503).json(results);

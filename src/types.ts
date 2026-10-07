@@ -89,6 +89,7 @@ export interface ApiProviderHealth {
   upstreamHttpStatus?: number | null;
   authVerified?: boolean;
   generationVerified?: boolean;
+  message?: string | null;
   model?: string;
   error: string | null;
 }

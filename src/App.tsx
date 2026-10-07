@@ -104,26 +104,137 @@ export default function App() {
     try {
       const res = await fetch('/api/health');
       const contentType = res.headers.get('content-type') || '';
+
+      // 1. Distinguish API route not found (404)
+      if (res.status === 404) {
+        const notFoundMsg = 'API route not found (/api/health returned 404). Check Vercel serverless function deployment.';
+        setHealthStatus({
+          status: 'unhealthy',
+          timestamp: new Date().toISOString(),
+          providers: {
+            spoonacular: { status: 'error', responseTimeMs: null, error: notFoundMsg },
+            gemini: { status: 'error', responseTimeMs: null, error: notFoundMsg },
+          },
+        });
+        setToastMessage(notFoundMsg);
+        return;
+      }
+
+      // 2. Distinguish HTML returned instead of JSON (SPA rewrite issue)
       if (!contentType.includes('application/json')) {
-        throw new Error(`Endpoint returned non-JSON (status ${res.status}). Check Vercel API routing.`);
+        const text = await res.text().catch(() => '');
+        const isHtml = text.trim().startsWith('<!DOCTYPE') || text.trim().startsWith('<html');
+        const htmlMsg = isHtml
+          ? 'Backend returned HTML instead of JSON. Ensure Vercel does not rewrite /api/* to index.html.'
+          : `Backend returned unexpected content type: ${contentType || 'unknown'} (HTTP ${res.status}).`;
+
+        setHealthStatus({
+          status: 'unhealthy',
+          timestamp: new Date().toISOString(),
+          providers: {
+            spoonacular: { status: 'error', responseTimeMs: null, error: htmlMsg },
+            gemini: { status: 'error', responseTimeMs: null, error: htmlMsg },
+          },
+        });
+        setToastMessage(htmlMsg);
+        return;
       }
-      const data = await res.json();
+
+      // 3. Parse JSON response
+      let data: ApiHealthResponse;
+      try {
+        data = await res.json();
+      } catch (jsonErr: any) {
+        const parseMsg = `JSON parsing error: ${jsonErr.message}`;
+        setHealthStatus({
+          status: 'unhealthy',
+          timestamp: new Date().toISOString(),
+          providers: {
+            spoonacular: { status: 'error', responseTimeMs: null, error: parseMsg },
+            gemini: { status: 'error', responseTimeMs: null, error: parseMsg },
+          },
+        });
+        setToastMessage(parseMsg);
+        return;
+      }
+
+      // 4. Distinguish backend execution failure (500 without structured providers)
+      if (res.status === 500 && (!data.providers || !data.providers.gemini)) {
+        const execMsg = (data as any).error || 'Backend execution failure (HTTP 500)';
+        setHealthStatus({
+          status: 'unhealthy',
+          timestamp: new Date().toISOString(),
+          providers: {
+            spoonacular: { status: 'error', responseTimeMs: null, error: execMsg },
+            gemini: { status: 'error', responseTimeMs: null, error: execMsg },
+          },
+        });
+        setToastMessage(`Backend execution failure (HTTP 500): ${execMsg}`);
+        return;
+      }
+
+      // 5. Preserve provider-specific data and error messages from valid health JSON (including 503)
       setHealthStatus(data);
-      if (res.status === 200) {
-        setToastMessage('APIs check passed: Spoonacular & Gemini operational!');
+
+      const geminiProv = data.providers?.gemini;
+      const spoonProv = data.providers?.spoonacular;
+
+      // Build accurate diagnostic message without conflating providers
+      if (res.status === 200 && geminiProv?.status === 'ok' && spoonProv?.status === 'ok') {
+        setToastMessage('All APIs operational: Gemini and Spoonacular verified!');
       } else {
-        setToastMessage('API check completed: Demo mode active (keys unconfigured).');
+        const diagnostics: string[] = [];
+
+        // Evaluate Gemini provider specifically
+        if (geminiProv) {
+          if (geminiProv.status === 'ok') {
+            diagnostics.push('Gemini connected');
+          } else if (geminiProv.status === 'not_configured') {
+            diagnostics.push('GEMINI_API_KEY not configured');
+          } else if (geminiProv.error?.includes('401') || geminiProv.error?.includes('403') || geminiProv.error?.includes('credentials')) {
+            diagnostics.push('Gemini invalid credentials');
+          } else if (geminiProv.error?.includes('429') || geminiProv.error?.includes('Quota')) {
+            diagnostics.push('Gemini quota limit exceeded');
+          } else if (geminiProv.error?.includes('timed out') || geminiProv.error?.includes('504')) {
+            diagnostics.push('Gemini timeout');
+          } else {
+            diagnostics.push(`Gemini: ${geminiProv.error || 'error'}`);
+          }
+        }
+
+        // Evaluate Spoonacular provider specifically
+        if (spoonProv) {
+          if (spoonProv.status === 'ok') {
+            diagnostics.push('Spoonacular operational');
+          } else if (spoonProv.status === 'not_configured') {
+            diagnostics.push('Spoonacular not configured (Demo catalog)');
+          } else if (spoonProv.error?.includes('401') || spoonProv.error?.includes('403')) {
+            diagnostics.push('Spoonacular invalid key');
+          } else if (spoonProv.error?.includes('402') || spoonProv.error?.includes('quota') || spoonProv.error?.includes('429')) {
+            diagnostics.push('Spoonacular quota exceeded');
+          } else if (spoonProv.error?.includes('timed out')) {
+            diagnostics.push('Spoonacular timeout');
+          } else {
+            diagnostics.push(`Spoonacular: ${spoonProv.error || 'error'}`);
+          }
+        }
+
+        setToastMessage(diagnostics.join(' • '));
       }
-    } catch (err: any) {
+    } catch (networkErr: any) {
+      const netMsg = networkErr.name === 'AbortError'
+        ? 'API check timed out'
+        : `Network connection error: ${networkErr.message || 'Server unreachable'}`;
+
       setHealthStatus({
         status: 'unhealthy',
         timestamp: new Date().toISOString(),
         providers: {
-          spoonacular: { status: 'error', responseTimeMs: null, error: err.message },
-          gemini: { status: 'error', responseTimeMs: null, error: err.message },
+          spoonacular: { status: 'error', responseTimeMs: null, error: netMsg },
+          gemini: { status: 'error', responseTimeMs: null, error: netMsg },
         },
       });
-      setToastMessage(`API check notice: ${err.message || 'Cannot connect to endpoint'}`);
+      setToastMessage(netMsg);
     } finally {
       setIsHealthLoading(false);
     }

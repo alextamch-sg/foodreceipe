@@ -6,7 +6,13 @@
  */
 
 import { GoogleGenAI, Type } from '@google/genai';
-import { searchSpoonacularRecipes, sanitizeErrorMessage, getCuratedRecipes } from '../lib/api-client.js';
+import {
+  searchSpoonacularRecipes,
+  sanitizeErrorMessage,
+  getCuratedRecipes,
+  getGeminiModel,
+  FALLBACK_GEMINI_MODEL,
+} from '../lib/api-client.js';
 
 export default async function handler(req, res) {
   if (typeof res.status !== 'function') {
@@ -185,13 +191,14 @@ RULES:
       },
     };
 
-    // Try gemini-3.1-flash-lite first (fast, reliable latency), fallback to gemini-3.8-flash
+    // Use shared GEMINI_MODEL setting with resilient fallback
+    const targetModel = getGeminiModel();
+    let modelUsed = targetModel;
     let responseText = null;
-    let modelUsed = 'gemini-3.1-flash-lite';
 
     try {
       const response = await ai.models.generateContent({
-        model: 'gemini-3.1-flash-lite',
+        model: targetModel,
         contents: `Arrange the weekly menu for this household using the available recipes and constraints:\n${JSON.stringify(promptPayload, null, 2)}`,
         config: {
           systemInstruction,
@@ -201,10 +208,10 @@ RULES:
       });
       responseText = response.text ? response.text.trim() : '';
     } catch (primaryErr) {
-      console.warn('Primary model gemini-3.1-flash-lite failed, trying gemini-3.8-flash:', primaryErr.message);
-      modelUsed = 'gemini-3.8-flash';
+      console.warn(`Primary model ${targetModel} failed, trying ${FALLBACK_GEMINI_MODEL}:`, primaryErr.message);
+      modelUsed = FALLBACK_GEMINI_MODEL;
       const fallbackResponse = await ai.models.generateContent({
-        model: 'gemini-3.8-flash',
+        model: FALLBACK_GEMINI_MODEL,
         contents: `Arrange the weekly menu for this household using the available recipes and constraints:\n${JSON.stringify(promptPayload, null, 2)}`,
         config: {
           systemInstruction,
