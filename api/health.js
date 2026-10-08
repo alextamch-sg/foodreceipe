@@ -8,6 +8,7 @@
 
 import { GoogleGenAI } from '@google/genai';
 import { fetchWithTimeout, sanitizeErrorMessage, getGeminiModel } from '../lib/api-client.js';
+import { checkMcpConnection } from './mcp.js';
 
 export default async function handler(req, res) {
   // Ensure res has standard helper methods if running in pure Node http
@@ -45,6 +46,14 @@ export default async function handler(req, res) {
         message: null,
         error: null,
         model: configuredModel,
+      },
+      nutribalance: {
+        status: 'not_configured',
+        upstreamHttpStatus: null,
+        responseTimeMs: null,
+        endpoint: null,
+        toolsCount: null,
+        error: null,
       },
     },
   };
@@ -148,7 +157,33 @@ export default async function handler(req, res) {
     }
   }
 
-  // 3. Determine Overall System Status
+  // 3. Check NutriBalance MCP server
+  try {
+    const mcpCheck = await checkMcpConnection();
+    results.providers.nutribalance.endpoint = mcpCheck.serverUrl;
+    results.providers.nutribalance.responseTimeMs = mcpCheck.latencyMs;
+    results.providers.nutribalance.upstreamHttpStatus = mcpCheck.httpStatus;
+    results.providers.nutribalance.toolsCount = mcpCheck.toolsAvailable?.length || 5;
+
+    if (mcpCheck.reachable) {
+      if (mcpCheck.auth?.authenticated) {
+        results.providers.nutribalance.status = 'ok';
+      } else if (mcpCheck.auth?.authRequired) {
+        results.providers.nutribalance.status = 'not_configured';
+        results.providers.nutribalance.error = 'Protected by Bearer auth. App utilizes built-in NutriBalance clinical engine.';
+      } else {
+        results.providers.nutribalance.status = 'ok';
+      }
+    } else {
+      results.providers.nutribalance.status = 'error';
+      results.providers.nutribalance.error = mcpCheck.error;
+    }
+  } catch (mcpErr) {
+    results.providers.nutribalance.status = 'error';
+    results.providers.nutribalance.error = sanitizeErrorMessage(mcpErr);
+  }
+
+  // 4. Determine Overall System Status
   const isSpoonOk = results.providers.spoonacular.status === 'ok';
   const isGeminiOk = results.providers.gemini.status === 'ok';
 

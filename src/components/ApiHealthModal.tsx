@@ -175,6 +175,45 @@ export function ApiHealthModal({
                 : health?.providers.gemini.error || 'Click "Check APIs" below to verify status.'}
             </p>
           </div>
+
+          {/* NutriBalance MCP Server */}
+          <div className="p-4 bg-white border border-stone-200 rounded-xl shadow-2xs">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <Server className="w-4 h-4 text-stone-600" />
+                <span className="text-sm font-bold text-stone-800">
+                  NutriBalance MCP Server
+                </span>
+              </div>
+              {health?.providers.nutribalance ? (
+                renderStatusBadge(
+                  health.providers.nutribalance.status,
+                  health.providers.nutribalance.responseTimeMs
+                )
+              ) : (
+                <span className="text-xs text-stone-400">Not checked</span>
+              )}
+            </div>
+
+            {health?.providers.nutribalance && (
+              <div className="flex flex-wrap items-center gap-1.5 mb-2">
+                <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-stone-100 text-stone-600 border border-stone-200">
+                  server.smithery.ai/NutriBalance/nutribalance-mcp
+                </span>
+                <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  5 Clinical Tools Ready
+                </span>
+              </div>
+            )}
+
+            <p className="text-xs text-stone-500">
+              {health?.providers.nutribalance?.status === 'ok'
+                ? 'Connected to NutriBalance MCP. TDEE, micronutrient lookup, and deficiency algorithms active.'
+                : health?.providers.nutribalance?.status === 'not_configured'
+                ? (health.providers.nutribalance.error || 'Server reachable on Smithery. Protected by Bearer token; local clinical engine active.')
+                : health?.providers.nutribalance?.error || 'Click "Check APIs" below to verify status.'}
+            </p>
+          </div>
         </div>
 
         {/* Overall Status Banner */}

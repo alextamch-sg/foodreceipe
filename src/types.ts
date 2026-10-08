@@ -102,6 +102,10 @@ export interface ApiHealthResponse {
   providers: {
     spoonacular: ApiProviderHealth;
     gemini: ApiProviderHealth;
+    nutribalance?: ApiProviderHealth & {
+      endpoint?: string;
+      toolsCount?: number;
+    };
   };
 }
 
