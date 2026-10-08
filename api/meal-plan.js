@@ -2,7 +2,8 @@
  * /api/meal-plan.js
  * Generates an optimized 7-day family weekly menu rotation using Gemini (@google/genai)
  * and Spoonacular recipe candidates with resilient multi-tier model fallback.
- * Compatible with Vercel serverless functions and Express/Node.
+ * Allows per-day acceptance, changing/swapping until each day is accepted,
+ * and intelligent recipe curation.
  */
 
 import { GoogleGenAI, Type } from '@google/genai';
@@ -61,24 +62,30 @@ export default async function handler(req, res) {
     cookingTimePreferences = 45,
     primaryCuisines = ['Chinese', 'Cantonese', 'Asian'],
     lockedDays = [],
+    acceptedDays = [],
     existingMenu = [],
     swapDay = null,
+    excludeRecipeIds = [],
+    regenerateSeed = Date.now(),
   } = body || {};
 
   try {
-    // 1. Gather candidate recipes from Spoonacular & curated catalog
+    // 1. Gather candidate recipes from Spoonacular & curated catalog with dynamic offset
     const cuisineQuery = primaryCuisines.join(',');
+    const randomOffset = Math.floor(Math.random() * 20);
+
     const spoonCandidatesRes = await searchSpoonacularRecipes({
       query: '',
       cuisine: cuisineQuery,
-      number: 16,
+      number: 20,
+      offset: randomOffset,
     });
 
     let candidates = spoonCandidatesRes.results || [];
-    const curated = getCuratedRecipes();
+    const curated = getCuratedRecipes('', '', 25, randomOffset);
     candidates = [...candidates, ...curated];
 
-    // Deduplicate by ID
+    // Deduplicate candidates by ID
     const candidateMap = new Map();
     candidates.forEach((c) => {
       if (!candidateMap.has(String(c.id))) {
@@ -120,16 +127,41 @@ export default async function handler(req, res) {
     const activePool = safeCandidates.length >= 7 ? safeCandidates : uniqueCandidates;
     const daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
+    // Determine which days should stay locked/accepted vs which days need a fresh recipe
+    const daysToKeep = daysOfWeek.filter((d) => {
+      if (swapDay && d === swapDay) return false; // swapDay must be changed
+      return lockedDays.includes(d) || acceptedDays.includes(d);
+    });
+
+    const daysToChange = daysOfWeek.filter((d) => !daysToKeep.includes(d));
+
+    // Currently assigned recipe IDs
+    const currentAssignments = existingMenu.map((m) => ({
+      day: m.day,
+      id: String(m.recipeId || m.id),
+      mealName: m.mealName,
+    }));
+
+    // Recipe IDs currently in use for days that are changing (to avoid repeating them)
+    const changingCurrentIds = currentAssignments
+      .filter((a) => daysToChange.includes(a.day))
+      .map((a) => a.id);
+
+    const allExcludedIds = new Set([...(excludeRecipeIds || []), ...changingCurrentIds]);
+
     // 2. Check if GEMINI_API_KEY is configured
     const geminiKey = process.env.GEMINI_API_KEY;
 
     if (!geminiKey) {
-      const menu = buildDeterministicMenu({
+      const menu = buildDynamicMenu({
         candidates: activePool,
         existingMenu,
-        lockedDays,
+        daysToKeep,
+        daysToChange,
         swapDay,
-        cookingTimePreferences,
+        allExcludedIds,
+        acceptedDays,
+        lockedDays,
       });
 
       return res.status(200).json({
@@ -150,15 +182,18 @@ export default async function handler(req, res) {
       },
     });
 
+    // Provide Gemini with candidates that favor fresh unseen recipes for daysToChange
     const promptPayload = {
       daysOfWeek,
-      lockedDays,
-      existingMenuDays: existingMenu.map((m) => ({ day: m.day, id: m.id, mealName: m.mealName })),
+      daysToKeep,
+      daysToChange,
       swapDay,
+      currentDayAssignments: currentAssignments,
       householdSize,
       dietaryRestrictions,
       dislikedIngredients,
       maxCookingMinutes: cookingTimePreferences,
+      primaryCuisines,
       availableRecipes: activePool.map((c) => ({
         id: String(c.id),
         title: c.title,
@@ -169,13 +204,17 @@ export default async function handler(req, res) {
     };
 
     const systemInstruction = `You are the master family kitchen meal planner for Heirloom Table.
-Your task is to assign recipes to the 7-day Monday–Sunday menu for this family.
+Your task is to curate recipes from the provided Spoonacular and culinary database for the household's 7-day dinner menu (Monday through Sunday).
 RULES:
-1. ONLY select recipe IDs from the "availableRecipes" list. DO NOT invent or hallucinate recipe IDs.
-2. If a day is in "lockedDays", retain the recipe from "existingMenuDays" for that day.
-3. Ensure cooking times do not exceed maxCookingMinutes.
-4. Strictly respect all dietary restrictions and disliked ingredients.
-5. Return a JSON array of 7 objects (one for each day Monday through Sunday).`;
+1. For days listed in "daysToKeep": You MUST preserve the exact recipe previously assigned to that day in "currentDayAssignments".
+2. For days listed in "daysToChange":
+   - You MUST select a FRESH, DIFFERENT recipe from "availableRecipes".
+   - DO NOT repeat or reuse the recipe that was previously assigned to that day in "currentDayAssignments".
+   - Maximize variety across the week (balance chicken, seafood, pork, beef, tofu/plant-based).
+3. Strictly honor all dietary restrictions and disliked ingredients.
+4. Ensure cooking times do not exceed maxCookingMinutes.
+5. ONLY select recipe IDs from the "availableRecipes" list.
+6. Return a JSON array of 7 objects (one for each day Monday through Sunday).`;
 
     const schemaConfig = {
       type: Type.ARRAY,
@@ -191,7 +230,6 @@ RULES:
       },
     };
 
-    // Use shared GEMINI_MODEL setting with resilient fallback
     const targetModel = getGeminiModel();
     let modelUsed = targetModel;
     let responseText = null;
@@ -199,7 +237,7 @@ RULES:
     try {
       const response = await ai.models.generateContent({
         model: targetModel,
-        contents: `Arrange the weekly menu for this household using the available recipes and constraints:\n${JSON.stringify(promptPayload, null, 2)}`,
+        contents: `Curate and assemble the weekly menu rotation for this family. For daysToChange, ensure exciting new dishes different from currentDayAssignments:\n${JSON.stringify(promptPayload, null, 2)}`,
         config: {
           systemInstruction,
           responseMimeType: 'application/json',
@@ -212,7 +250,7 @@ RULES:
       modelUsed = FALLBACK_GEMINI_MODEL;
       const fallbackResponse = await ai.models.generateContent({
         model: FALLBACK_GEMINI_MODEL,
-        contents: `Arrange the weekly menu for this household using the available recipes and constraints:\n${JSON.stringify(promptPayload, null, 2)}`,
+        contents: `Curate and assemble the weekly menu rotation for this family. For daysToChange, ensure exciting new dishes different from currentDayAssignments:\n${JSON.stringify(promptPayload, null, 2)}`,
         config: {
           systemInstruction,
           responseMimeType: 'application/json',
@@ -234,23 +272,38 @@ RULES:
       throw new Error('Gemini response could not be parsed into a weekly menu array');
     }
 
-    // Validate that recipe IDs exist and assemble final menu
-    const assembledMenu = daysOfWeek.map((dayName, idx) => {
-      // Check if locked
-      if (lockedDays.includes(dayName) && swapDay !== dayName) {
+    // Validate recipe IDs and assemble final menu
+    const assembledMenu = daysOfWeek.map((dayName) => {
+      // If day was in daysToKeep, preserve existing meal
+      if (daysToKeep.includes(dayName)) {
         const existing = existingMenu.find((m) => m.day === dayName);
-        if (existing) return existing;
+        if (existing) {
+          return {
+            ...existing,
+            isAccepted: acceptedDays.includes(dayName),
+            isLocked: lockedDays.includes(dayName),
+          };
+        }
       }
 
       const assignment = parsedAssignments.find((a) => a.day === dayName);
       let selectedRecipe = assignment ? candidateMap.get(String(assignment.recipeId)) : null;
 
-      // Fallback if recipeId was invalid or hallucinated
-      if (!selectedRecipe) {
-        selectedRecipe = activePool[idx % activePool.length];
+      // Fallback if recipeId was missing or repeated
+      if (!selectedRecipe || (changingCurrentIds.includes(String(selectedRecipe.id)) && activePool.length > 7)) {
+        // Find an unused candidate
+        const unused = activePool.find(
+          (c) => !allExcludedIds.has(String(c.id)) && !changingCurrentIds.includes(String(c.id))
+        );
+        selectedRecipe = unused || activePool[Math.floor(Math.random() * activePool.length)];
       }
 
-      return formatMenuItemFromRecipe(selectedRecipe, dayName, assignment?.subName);
+      const formatted = formatMenuItemFromRecipe(selectedRecipe, dayName, assignment?.subName);
+      return {
+        ...formatted,
+        isAccepted: false, // Newly generated or swapped days require user acceptance
+        isLocked: lockedDays.includes(dayName) && dayName !== swapDay,
+      };
     });
 
     return res.status(200).json({
@@ -261,13 +314,21 @@ RULES:
     });
   } catch (error) {
     console.error('Gemini meal plan generation error:', error);
-    // On error, keep existing menu or fall back gracefully
-    const fallbackMenu = buildDeterministicMenu({
-      candidates: getCuratedRecipes(),
+    const daysToKeep = daysOfWeekList.filter((d) => {
+      if (swapDay && d === swapDay) return false;
+      return lockedDays.includes(d) || acceptedDays.includes(d);
+    });
+    const daysToChange = daysOfWeekList.filter((d) => !daysToKeep.includes(d));
+
+    const fallbackMenu = buildDynamicMenu({
+      candidates: getCuratedRecipes('', '', 25, Math.floor(Math.random() * 20)),
       existingMenu,
-      lockedDays,
+      daysToKeep,
+      daysToChange,
       swapDay,
-      cookingTimePreferences,
+      allExcludedIds: new Set(excludeRecipeIds || []),
+      acceptedDays,
+      lockedDays,
     });
 
     const statusCode = error.status || error.code || 500;
@@ -291,6 +352,8 @@ RULES:
   }
 }
 
+const daysOfWeekList = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
 function formatMenuItemFromRecipe(recipe, day, subName) {
   const ingredients = (recipe.extendedIngredients || []).map((ing) => ({
     name: ing.name || ing.original || 'Ingredient',
@@ -310,21 +373,65 @@ function formatMenuItemFromRecipe(recipe, day, subName) {
     image: recipe.image || 'https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=600&q=80',
     tags: ['Family Balance', 'Portion Calibrated'],
     servings: 2.75,
+    isAccepted: false,
     ingredients,
   };
 }
 
-function buildDeterministicMenu({ candidates, existingMenu = [], lockedDays = [], swapDay = null, cookingTimePreferences = 45 }) {
-  const daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+function buildDynamicMenu({
+  candidates,
+  existingMenu = [],
+  daysToKeep = [],
+  daysToChange = [],
+  swapDay = null,
+  allExcludedIds = new Set(),
+  acceptedDays = [],
+  lockedDays = [],
+}) {
+  const pool = [...candidates];
+  // Shuffle pool so regenerating produces different results
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
 
-  return daysOfWeek.map((dayName, idx) => {
-    if (lockedDays.includes(dayName) && swapDay !== dayName) {
+  let poolIdx = 0;
+
+  return daysOfWeekList.map((dayName) => {
+    // Keep existing if in daysToKeep
+    if (daysToKeep.includes(dayName)) {
       const existing = existingMenu.find((m) => m.day === dayName);
-      if (existing) return existing;
+      if (existing) {
+        return {
+          ...existing,
+          isAccepted: acceptedDays.includes(dayName),
+          isLocked: lockedDays.includes(dayName),
+        };
+      }
     }
 
-    const recipe = candidates[(idx + (swapDay === dayName ? 3 : 0)) % candidates.length];
-    return formatMenuItemFromRecipe(recipe, dayName);
+    // Find candidate not excluded
+    let recipe = null;
+    for (let k = 0; k < pool.length; k++) {
+      const cand = pool[(poolIdx + k) % pool.length];
+      if (!allExcludedIds.has(String(cand.id))) {
+        recipe = cand;
+        poolIdx = (poolIdx + k + 1) % pool.length;
+        break;
+      }
+    }
+
+    if (!recipe) {
+      recipe = pool[poolIdx % pool.length];
+      poolIdx = (poolIdx + 1) % pool.length;
+    }
+
+    const formatted = formatMenuItemFromRecipe(recipe, dayName);
+    return {
+      ...formatted,
+      isAccepted: false,
+      isLocked: lockedDays.includes(dayName) && dayName !== swapDay,
+    };
   });
 }
 

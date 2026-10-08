@@ -436,6 +436,7 @@ export const initialCategories: CategoryGroup[] = [
 export const initialWeeklyMenu: MenuItem[] = [
   {
     id: 'menu-mon',
+    recipeId: 'curated-101',
     day: 'Monday',
     mealName: 'Ginger Soy Chicken Thighs & Garlic Broccoli Medley',
     subName: 'High Protein • Quick 25-Min Wok Toss',
@@ -445,6 +446,7 @@ export const initialWeeklyMenu: MenuItem[] = [
     image: 'https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=600&q=80',
     tags: ['Quick Prep', 'High Protein', 'Family Favorite'],
     servings: 2.75,
+    isAccepted: false,
     ingredients: [
       { name: 'Fresh Chicken Thighs', qty: '400g', status: 'buy' },
       { name: 'Broccoli', qty: '2 heads (600g)', status: 'buy' },
@@ -455,6 +457,7 @@ export const initialWeeklyMenu: MenuItem[] = [
   },
   {
     id: 'menu-tue',
+    recipeId: 'curated-102',
     day: 'Tuesday',
     mealName: 'Silken Tofu & Minced Pork Claypot',
     subName: 'Comforting • Gentle Textures for Leo',
@@ -464,6 +467,7 @@ export const initialWeeklyMenu: MenuItem[] = [
     image: 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=600&q=80',
     tags: ['Kid Friendly', 'Gentle Texture'],
     servings: 2.75,
+    isAccepted: false,
     ingredients: [
       { name: 'Minced Pork (Lean)', qty: '250g', status: 'buy' },
       { name: 'Silken Tofu', qty: '2 boxes', status: 'buy' },
@@ -473,6 +477,7 @@ export const initialWeeklyMenu: MenuItem[] = [
   },
   {
     id: 'menu-wed',
+    recipeId: 'curated-103',
     day: 'Wednesday',
     mealName: 'Steamed Sea Bass with Ginger Scallions & Tomato Egg Soup',
     subName: 'Featured Dinner • Zero Oil Broth',
@@ -482,6 +487,7 @@ export const initialWeeklyMenu: MenuItem[] = [
     image: 'https://images.unsplash.com/photo-1547592166-23ac45744acd?auto=format&fit=crop&w=600&q=80',
     tags: ['Featured', 'Clean Eating', 'Omega-3 Rich'],
     servings: 2.75,
+    isAccepted: false,
     ingredients: [
       { name: 'Sea Bass (Whole, cleaned)', qty: '1 whole (~700g)', status: 'buy' },
       { name: 'Roma Tomatoes', qty: '4 medium', status: 'buy' },
@@ -492,6 +498,7 @@ export const initialWeeklyMenu: MenuItem[] = [
   },
   {
     id: 'menu-thu',
+    recipeId: 'curated-104',
     day: 'Thursday',
     mealName: 'Slow Simmer Pork Rib & Winter Melon Broth',
     subName: 'Nourishing Cantonese Clear Soup',
@@ -501,6 +508,7 @@ export const initialWeeklyMenu: MenuItem[] = [
     image: 'https://images.unsplash.com/photo-1547592180-85f173990554?auto=format&fit=crop&w=600&q=80',
     tags: ['Nourishing', 'Slow Simmer'],
     servings: 2.75,
+    isAccepted: false,
     ingredients: [
       { name: 'Pork Spare Ribs', qty: '500g', status: 'buy' },
       { name: 'Winter Melon', qty: '500g sliced', status: 'buy' },
@@ -510,6 +518,7 @@ export const initialWeeklyMenu: MenuItem[] = [
   },
   {
     id: 'menu-fri',
+    recipeId: 'curated-105',
     day: 'Friday',
     mealName: 'Mild Golden Chicken Curry & Fragrant Jasmine Rice',
     subName: 'Warm Weekend Kickoff • Kid Friendly',
@@ -519,6 +528,7 @@ export const initialWeeklyMenu: MenuItem[] = [
     image: 'https://images.unsplash.com/photo-1589302168068-964664d93dc0?auto=format&fit=crop&w=600&q=80',
     tags: ['Mild Spice', 'One-Pot Meal'],
     servings: 2.75,
+    isAccepted: false,
     ingredients: [
       { name: 'Fresh Chicken Thighs', qty: '250g', status: 'buy' },
       { name: 'Jasmine Fragrant Rice', qty: '3 cups', status: 'buy' },
@@ -527,6 +537,7 @@ export const initialWeeklyMenu: MenuItem[] = [
   },
   {
     id: 'menu-sat',
+    recipeId: 'curated-106',
     day: 'Saturday',
     mealName: 'Teriyaki Glazed Salmon Fillets with Steamed Greens',
     subName: 'Active Recovery Protein for David',
@@ -536,6 +547,7 @@ export const initialWeeklyMenu: MenuItem[] = [
     image: 'https://images.unsplash.com/photo-1519708227418-c8fd9a32b7a2?auto=format&fit=crop&w=600&q=80',
     tags: ['High Protein', 'Omega-3'],
     servings: 2.75,
+    isAccepted: false,
     ingredients: [
       { name: 'Salmon Fillets', qty: '350g', status: 'buy' },
       { name: 'Bok Choy / Xiao Bai Cai', qty: '200g', status: 'buy' },
@@ -545,6 +557,7 @@ export const initialWeeklyMenu: MenuItem[] = [
   },
   {
     id: 'menu-sun',
+    recipeId: 'curated-107',
     day: 'Sunday',
     mealName: 'Homestyle Poached Ginger Chicken & Noodle Bowl',
     subName: 'Relaxed Family Gathering',
@@ -554,6 +567,7 @@ export const initialWeeklyMenu: MenuItem[] = [
     image: 'https://images.unsplash.com/photo-1598515214211-89d3c73ae83b?auto=format&fit=crop&w=600&q=80',
     tags: ['Signature', 'Family Gathering'],
     servings: 2.75,
+    isAccepted: false,
     ingredients: [
       { name: 'Fresh Chicken Thighs', qty: '400g', status: 'buy' },
       { name: 'Xiao Bai Cai', qty: '200g', status: 'buy' },

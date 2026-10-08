@@ -241,7 +241,7 @@ export default function App() {
   };
 
   // Generate Weekly Menu from /api/meal-plan
-  const handleGenerateMealPlan = async (swapDay?: string) => {
+  const handleGenerateMealPlan = async (swapDay?: string, forceRegenerateAll = false) => {
     setIsGeneratingMenu(true);
     setGenerationError(null);
 
@@ -249,6 +249,20 @@ export default function App() {
       const lockedDays = weeklyMenu
         .filter((m) => m.isLocked && m.day !== swapDay)
         .map((m) => m.day);
+
+      const acceptedDays = forceRegenerateAll
+        ? []
+        : weeklyMenu
+            .filter((m) => m.isAccepted && m.day !== swapDay)
+            .map((m) => m.day);
+
+      // Exclude recipe IDs currently displayed on days that are changing to guarantee fresh new options
+      const excludeRecipeIds = swapDay
+        ? [weeklyMenu.find((m) => m.day === swapDay)?.recipeId || ''].filter(Boolean)
+        : weeklyMenu
+            .filter((m) => !acceptedDays.includes(m.day) && !lockedDays.includes(m.day))
+            .map((m) => m.recipeId || '')
+            .filter(Boolean);
 
       const payload = {
         householdSize: { adults: preferences.adults, children: preferences.children },
@@ -258,12 +272,15 @@ export default function App() {
         cookingTimePreferences: preferences.maxCookingTime,
         primaryCuisines: preferences.primaryCuisines.filter((c) => c.active).map((c) => c.name),
         lockedDays,
+        acceptedDays,
         existingMenu: weeklyMenu,
         swapDay: swapDay || null,
+        excludeRecipeIds,
+        regenerateSeed: Date.now(),
       };
 
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 20000);
+      const timeoutId = setTimeout(() => controller.abort(), 25000);
 
       const response = await fetch('/api/meal-plan', {
         method: 'POST',
@@ -276,18 +293,21 @@ export default function App() {
 
       const contentType = response.headers.get('content-type') || '';
       if (!contentType.includes('application/json')) {
-        throw new Error(`Server returned HTML/non-JSON (${response.status}). Check Vercel API routing.`);
+        throw new Error(`Server returned HTML/non-JSON (${response.status}). Check API routing.`);
       }
 
       const data = await response.json();
 
       if (data.menu && Array.isArray(data.menu)) {
-        // Preserve lock flags
+        // Build updated menu with preserved acceptance & locks
         const nextMenu: MenuItem[] = data.menu.map((m: MenuItem) => {
           const oldMeal = weeklyMenu.find((o) => o.day === m.day);
+          const wasAccepted = oldMeal?.isAccepted && m.day !== swapDay && !forceRegenerateAll;
+          const wasLocked = oldMeal?.isLocked && m.day !== swapDay;
           return {
             ...m,
-            isLocked: oldMeal?.isLocked || false,
+            isLocked: wasLocked || false,
+            isAccepted: wasAccepted || false, // New or swapped meal stays unaccepted until user accepts it!
           };
         });
 
@@ -315,15 +335,15 @@ export default function App() {
           setIsDemoMode(true);
           setToastMessage(
             swapDay
-              ? `Replaced ${swapDay}'s dinner with curated recipe candidate.`
-              : 'Weekly menu generated using curated culinary catalog (Demo Mode).'
+              ? `Curated new recipe for ${swapDay}. Review and click Accept when satisfied!`
+              : 'Weekly menu curated with new recipes. Review and accept each day of the week!'
           );
         } else {
           setIsDemoMode(false);
           setToastMessage(
             swapDay
-              ? `Replaced ${swapDay}'s recipe via Gemini & Spoonacular!`
-              : 'Weekly menu optimized via Gemini & Spoonacular!'
+              ? `Gemini curated a fresh alternative for ${swapDay}!`
+              : 'Gemini curated a fresh menu rotation! Accept each day or swap until happy.'
           );
         }
 
@@ -333,12 +353,33 @@ export default function App() {
       }
     } catch (err: any) {
       console.error('Menu generation error:', err);
-      const errMsg = err.name === 'AbortError' ? 'Request timed out after 20s' : (err.message || 'Service unavailable');
+      const errMsg = err.name === 'AbortError' ? 'Request timed out after 25s' : (err.message || 'Service unavailable');
       setGenerationError(errMsg);
       setToastMessage(`Notice: ${errMsg}. Current menu kept safely.`);
     } finally {
       setIsGeneratingMenu(false);
     }
+  };
+
+  // Toggle accept status on a meal
+  const handleToggleAcceptDay = (dayName: string) => {
+    setWeeklyMenu((prev) =>
+      prev.map((item) =>
+        item.day === dayName ? { ...item, isAccepted: !item.isAccepted } : item
+      )
+    );
+    const target = weeklyMenu.find((m) => m.day === dayName);
+    setToastMessage(
+      target?.isAccepted
+        ? `Un-accepted ${dayName}'s dinner. You can swap or change it freely.`
+        : `Accepted ${dayName}'s dinner! ✓ Locked in for the week.`
+    );
+  };
+
+  // Accept all 7 days of the week
+  const handleAcceptAllDays = () => {
+    setWeeklyMenu((prev) => prev.map((item) => ({ ...item, isAccepted: true })));
+    setToastMessage('All 7 dinners accepted for the week! 🎉 Shopping list synchronized.');
   };
 
   // Toggle lock status on a meal
@@ -557,7 +598,10 @@ export default function App() {
             onViewShoppingList={() => setActiveTab('shopping')}
             onSwapMeal={(dayName) => handleGenerateMealPlan(dayName)}
             onToggleLockDay={handleToggleLockDay}
+            onToggleAcceptDay={handleToggleAcceptDay}
+            onAcceptAllDays={handleAcceptAllDays}
             onRegenerateUnlocked={() => handleGenerateMealPlan()}
+            onRegenerateUnaccepted={() => handleGenerateMealPlan(undefined, false)}
             isLoading={isGeneratingMenu}
           />
         )}
@@ -582,7 +626,8 @@ export default function App() {
         isOpen={isGenerateOpen}
         onClose={() => setIsGenerateOpen(false)}
         preferences={preferences}
-        onGenerate={() => handleGenerateMealPlan()}
+        acceptedCount={weeklyMenu.filter((m) => m.isAccepted).length}
+        onGenerate={(forceAll) => handleGenerateMealPlan(undefined, forceAll)}
         isGenerating={isGeneratingMenu}
         error={generationError}
         isDemo={isDemoMode}

@@ -18,6 +18,10 @@ import {
   RefreshCw,
   Lock,
   Unlock,
+  CheckCircle2,
+  Check,
+  RotateCw,
+  ListChecks,
 } from 'lucide-react';
 
 interface WeeklyMenuScreenProps {
@@ -27,7 +31,10 @@ interface WeeklyMenuScreenProps {
   onViewShoppingList: () => void;
   onSwapMeal?: (dayName: string) => void;
   onToggleLockDay?: (dayName: string) => void;
+  onToggleAcceptDay?: (dayName: string) => void;
+  onAcceptAllDays?: () => void;
   onRegenerateUnlocked?: () => void;
+  onRegenerateUnaccepted?: () => void;
   isLoading?: boolean;
 }
 
@@ -38,15 +45,16 @@ export function WeeklyMenuScreen({
   onViewShoppingList,
   onSwapMeal,
   onToggleLockDay,
+  onToggleAcceptDay,
+  onAcceptAllDays,
   onRegenerateUnlocked,
+  onRegenerateUnaccepted,
   isLoading = false,
 }: WeeklyMenuScreenProps) {
   const [selectedDay, setSelectedDay] = useState<string>('Wednesday');
-
   const [selectedMemberId, setSelectedMemberId] = useState<string>('');
 
   const selectedMeal = menuItems.find((m) => m.day === selectedDay) || menuItems[0];
-
   const totalMultiplier = preferences.members.reduce((acc, m) => acc + getMemberPortion(m), 0);
 
   // Sample calorie estimate for the selected member's portion of the selected dinner
@@ -59,6 +67,8 @@ export function WeeklyMenuScreen({
   const memberDailyTarget = selectedMember ? getDailyCalorieTarget(selectedMember) : 0;
 
   const lockedCount = menuItems.filter((m) => m.isLocked).length;
+  const acceptedCount = menuItems.filter((m) => m.isAccepted).length;
+  const allAccepted = acceptedCount === 7;
 
   return (
     <div className="pb-28 pt-6 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -66,12 +76,12 @@ export function WeeklyMenuScreen({
       <div className="mb-2">
         <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-[#EEF4F0] text-[#244E3B] rounded-full text-xs font-semibold tracking-tight border border-[#D5E5DB]">
           <Calendar className="w-3.5 h-3.5 text-[#244E3B]" />
-          OCT 21 – OCT 27 • 7-DAY NUTRITION & PORTION BALANCED ROTATION
+          7-DAY NUTRITION & PORTION BALANCED FAMILY ROTATION
         </span>
       </div>
 
       {/* Header Row */}
-      <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4 mb-8">
+      <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4 mb-6">
         <div>
           <h1 className="font-editorial text-3xl sm:text-4xl text-[#1E3027] tracking-tight">
             Weekly Family Menu Plan
@@ -82,14 +92,14 @@ export function WeeklyMenuScreen({
         </div>
 
         <div className="flex items-center gap-2.5 flex-wrap">
-          {onRegenerateUnlocked && (
+          {onRegenerateUnaccepted && acceptedCount < 7 && (
             <button
-              onClick={onRegenerateUnlocked}
+              onClick={onRegenerateUnaccepted}
               disabled={isLoading}
               className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-stone-700 bg-white border border-stone-200 rounded-lg hover:bg-stone-50 shadow-2xs transition-colors disabled:opacity-60"
             >
               <RefreshCw className={`w-3.5 h-3.5 text-stone-500 ${isLoading ? 'animate-spin' : ''}`} />
-              <span>Regenerate Unlocked ({7 - lockedCount})</span>
+              <span>Regenerate Unaccepted ({7 - acceptedCount})</span>
             </button>
           )}
 
@@ -107,8 +117,72 @@ export function WeeklyMenuScreen({
             className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-[#233F33] hover:bg-[#192F26] rounded-lg shadow-2xs transition-all active:scale-[0.98] disabled:opacity-60"
           >
             <Sparkles className="w-3.5 h-3.5 text-emerald-300" />
-            Generate New Rotation
+            Regenerate Rotation
           </button>
+        </div>
+      </div>
+
+      {/* Menu Approval & Acceptance Status Banner */}
+      <div className={`mb-8 p-4 rounded-2xl border transition-all ${
+        allAccepted
+          ? 'bg-[#F2F8F4] border-[#B8DEC7]'
+          : 'bg-white border-stone-200 shadow-2xs'
+      }`}>
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              {allAccepted ? (
+                <div className="p-1 bg-emerald-600 text-white rounded-full">
+                  <Check className="w-4 h-4" />
+                </div>
+              ) : (
+                <div className="p-1 bg-amber-500 text-white rounded-full">
+                  <ListChecks className="w-4 h-4" />
+                </div>
+              )}
+              <h2 className="text-sm font-bold text-stone-900 flex items-center gap-2">
+                <span>Weekly Menu Approval:</span>
+                <span className={`px-2 py-0.5 rounded text-xs font-mono font-bold ${
+                  allAccepted ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-900'
+                }`}>
+                  {acceptedCount} of 7 Days Accepted
+                </span>
+              </h2>
+            </div>
+            <p className="text-xs text-stone-600">
+              {allAccepted
+                ? 'All 7 dinners are accepted and locked into your weekly plan and consolidated grocery shopping list.'
+                : 'Swap or regenerate any day until you find recipes you love. Accept each day individually or click "Accept All 7 Days".'}
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            {!allAccepted && onAcceptAllDays && (
+              <button
+                type="button"
+                onClick={onAcceptAllDays}
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-white bg-[#2D6A4F] hover:bg-[#204E3A] rounded-lg shadow-2xs transition-colors"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>Accept All 7 Days</span>
+              </button>
+            )}
+
+            {allAccepted && onToggleAcceptDay && (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-800 bg-emerald-100 rounded-lg">
+                <Check className="w-3.5 h-3.5" />
+                <span>Weekly Plan Approved</span>
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Progress Bar */}
+        <div className="mt-3.5 w-full bg-stone-100 rounded-full h-2 overflow-hidden border border-stone-200/50">
+          <div
+            className={`h-full transition-all duration-300 ${allAccepted ? 'bg-emerald-600' : 'bg-[#2D6A4F]'}`}
+            style={{ width: `${Math.round((acceptedCount / 7) * 100)}%` }}
+          />
         </div>
       </div>
 
@@ -116,6 +190,8 @@ export function WeeklyMenuScreen({
       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2.5 mb-8">
         {menuItems.map((item) => {
           const isSelected = item.day === selectedDay;
+          const isAccepted = item.isAccepted;
+
           return (
             <div
               key={item.id}
@@ -131,12 +207,20 @@ export function WeeklyMenuScreen({
               >
                 <div className="flex items-center justify-between text-xs font-semibold text-stone-500 mb-1">
                   <span>{item.day.slice(0, 3)}</span>
-                  <span className="text-[10px] text-stone-400 font-mono">
-                    {item.prepTimeMinutes}m
-                  </span>
+                  <div className="flex items-center gap-1">
+                    {isAccepted ? (
+                      <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 bg-emerald-100 text-emerald-800 text-[10px] font-bold rounded">
+                        <Check className="w-2.5 h-2.5" /> OK
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center px-1.5 py-0.2 bg-amber-100 text-amber-800 text-[10px] font-medium rounded">
+                        Review
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <p
-                  className={`text-xs font-bold line-clamp-1 leading-snug ${
+                  className={`text-xs font-bold line-clamp-2 leading-snug min-h-[2rem] ${
                     isSelected ? 'text-[#1F3329]' : 'text-stone-800'
                   }`}
                 >
@@ -146,29 +230,64 @@ export function WeeklyMenuScreen({
 
               <div className="mt-2.5 pt-2 border-t border-stone-100 flex items-center justify-between">
                 <span className="text-[10px] text-stone-400 flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                  {item.cuisine.split(' ')[0]}
+                  <span className={`w-1.5 h-1.5 rounded-full ${isAccepted ? 'bg-emerald-500' : 'bg-amber-400'}`} />
+                  {item.prepTimeMinutes}m
                 </span>
 
-                {onToggleLockDay && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onToggleLockDay(item.day);
-                    }}
-                    title={item.isLocked ? 'Locked (will not change during generation)' : 'Unlocked'}
-                    className={`p-1 rounded hover:bg-stone-100 transition-colors ${
-                      item.isLocked ? 'text-[#233F33]' : 'text-stone-400 hover:text-stone-600'
-                    }`}
-                  >
-                    {item.isLocked ? (
-                      <Lock className="w-3 h-3 text-[#233F33]" />
-                    ) : (
-                      <Unlock className="w-3 h-3 text-stone-300 hover:text-stone-500" />
-                    )}
-                  </button>
-                )}
+                <div className="flex items-center gap-1">
+                  {onSwapMeal && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onSwapMeal(item.day);
+                      }}
+                      disabled={isLoading}
+                      title="Swap / roll a new recipe for this day"
+                      className="p-1 rounded text-stone-400 hover:text-stone-700 hover:bg-stone-100 transition-colors"
+                    >
+                      <RefreshCw className={`w-3 h-3 ${isLoading && selectedDay === item.day ? 'animate-spin' : ''}`} />
+                    </button>
+                  )}
+
+                  {onToggleAcceptDay && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onToggleAcceptDay(item.day);
+                      }}
+                      title={isAccepted ? 'Accepted (Click to change)' : 'Click to Accept this dinner'}
+                      className={`p-1 rounded transition-colors ${
+                        isAccepted
+                          ? 'text-emerald-700 bg-emerald-50 hover:bg-emerald-100'
+                          : 'text-stone-300 hover:text-emerald-600 hover:bg-stone-100'
+                      }`}
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+
+                  {onToggleLockDay && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onToggleLockDay(item.day);
+                      }}
+                      title={item.isLocked ? 'Locked (will not change during generation)' : 'Unlocked'}
+                      className={`p-1 rounded hover:bg-stone-100 transition-colors ${
+                        item.isLocked ? 'text-[#233F33]' : 'text-stone-300 hover:text-stone-500'
+                      }`}
+                    >
+                      {item.isLocked ? (
+                        <Lock className="w-3 h-3 text-[#233F33]" />
+                      ) : (
+                        <Unlock className="w-3 h-3" />
+                      )}
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           );
@@ -180,7 +299,7 @@ export function WeeklyMenuScreen({
         <div className="bg-white border border-stone-200/80 rounded-2xl overflow-hidden shadow-2xs mb-8">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-0">
             {/* Visual Cover */}
-            <div className="lg:col-span-5 relative h-64 lg:h-auto min-h-[300px]">
+            <div className="lg:col-span-5 relative h-64 lg:h-auto min-h-[320px]">
               <ImgWithFallback
                 src={selectedMeal.image}
                 alt={selectedMeal.mealName}
@@ -188,15 +307,24 @@ export function WeeklyMenuScreen({
                 fallbackText={selectedMeal.mealName}
               />
               <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent lg:hidden" />
-              <div className="absolute top-4 left-4 flex gap-2">
+              <div className="absolute top-4 left-4 flex gap-2 flex-wrap">
                 <span className="px-2.5 py-1 bg-white/90 backdrop-blur-xs text-stone-900 rounded-full text-xs font-bold shadow-2xs">
                   {selectedMeal.day} Dinner
                 </span>
                 <span className="px-2.5 py-1 bg-[#233F33]/90 backdrop-blur-xs text-emerald-200 rounded-full text-xs font-bold shadow-2xs">
                   {selectedMeal.cuisine}
                 </span>
+                {selectedMeal.isAccepted ? (
+                  <span className="px-2.5 py-1 bg-emerald-600 text-white rounded-full text-xs font-bold shadow-2xs flex items-center gap-1">
+                    <Check className="w-3 h-3" /> Accepted
+                  </span>
+                ) : (
+                  <span className="px-2.5 py-1 bg-amber-500 text-white rounded-full text-xs font-bold shadow-2xs flex items-center gap-1">
+                    Needs Acceptance
+                  </span>
+                )}
                 {selectedMeal.isLocked && (
-                  <span className="px-2 py-1 bg-amber-500/90 text-white rounded-full text-xs font-bold shadow-2xs flex items-center gap-1">
+                  <span className="px-2 py-1 bg-stone-800/90 text-white rounded-full text-xs font-bold shadow-2xs flex items-center gap-1">
                     <Lock className="w-3 h-3" /> Locked
                   </span>
                 )}
@@ -234,7 +362,7 @@ export function WeeklyMenuScreen({
                   {selectedMeal.description}
                 </p>
 
-                {/* Calories per person (sample values) */}
+                {/* Calories per person */}
                 {selectedMember && (
                   <div className="mb-6 p-3.5 bg-[#FAFBF9] border border-[#E3E8E4] rounded-xl">
                     <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
@@ -276,10 +404,6 @@ export function WeeklyMenuScreen({
                         </p>
                       </div>
                     </div>
-
-                    <p className="text-[11px] text-stone-400 mt-2">
-                      Sample estimate for this dinner only. It is one meal and is not meant to cover the full daily target.
-                    </p>
                   </div>
                 )}
 
@@ -321,20 +445,54 @@ export function WeeklyMenuScreen({
                 </div>
               </div>
 
-              {/* Action row */}
+              {/* Action row with Accept and Swap */}
               <div className="pt-4 border-t border-stone-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div className="flex items-center gap-1.5 text-xs text-stone-500">
                   <ChefHat className="w-4 h-4 text-stone-400 shrink-0" />
                   <span>
-                    Respects all household allergy & kid-mild restrictions
+                    Respects all household allergy & dietary constraints
                   </span>
                 </div>
 
-                <div className="flex items-center gap-2 self-end sm:self-center">
+                <div className="flex items-center gap-2.5 flex-wrap self-end sm:self-center">
+                  {/* Primary Accept / Accepted Button */}
+                  {onToggleAcceptDay && (
+                    <button
+                      type="button"
+                      onClick={() => onToggleAcceptDay(selectedMeal.day)}
+                      className={`inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold rounded-lg transition-all shadow-2xs ${
+                        selectedMeal.isAccepted
+                          ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 hover:bg-emerald-200'
+                          : 'bg-[#2D6A4F] text-white hover:bg-[#204E3A]'
+                      }`}
+                    >
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>
+                        {selectedMeal.isAccepted
+                          ? `Accepted for ${selectedMeal.day} ✓`
+                          : `Accept ${selectedMeal.day}'s Dinner`}
+                      </span>
+                    </button>
+                  )}
+
+                  {/* Swap / Change Dish Button */}
+                  {onSwapMeal && (
+                    <button
+                      type="button"
+                      onClick={() => onSwapMeal(selectedMeal.day)}
+                      disabled={isLoading}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-stone-700 bg-stone-100 hover:bg-stone-200 rounded-lg transition-colors disabled:opacity-60"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+                      <span>Swap Recipe</span>
+                    </button>
+                  )}
+
                   {onToggleLockDay && (
                     <button
+                      type="button"
                       onClick={() => onToggleLockDay(selectedMeal.day)}
-                      className={`inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors border ${
+                      className={`inline-flex items-center gap-1 px-3 py-2 text-xs font-semibold rounded-lg transition-colors border ${
                         selectedMeal.isLocked
                           ? 'bg-amber-50 text-amber-800 border-amber-200'
                           : 'bg-white text-stone-700 border-stone-200 hover:bg-stone-50'
@@ -348,28 +506,18 @@ export function WeeklyMenuScreen({
                       ) : (
                         <>
                           <Unlock className="w-3.5 h-3.5 text-stone-400" />
-                          <span>Lock Meal</span>
+                          <span>Lock</span>
                         </>
                       )}
                     </button>
                   )}
 
-                  {onSwapMeal && (
-                    <button
-                      onClick={() => onSwapMeal(selectedMeal.day)}
-                      disabled={isLoading}
-                      className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-stone-700 bg-stone-100 hover:bg-stone-200 rounded-lg transition-colors disabled:opacity-60"
-                    >
-                      <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-                      Swap Recipe
-                    </button>
-                  )}
-
                   <button
+                    type="button"
                     onClick={onViewShoppingList}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-white bg-[#233F33] hover:bg-[#192F26] rounded-lg shadow-2xs transition-colors"
+                    className="inline-flex items-center gap-1 px-3 py-2 text-xs font-semibold text-stone-700 hover:text-stone-900 rounded-lg hover:bg-stone-100 transition-colors"
                   >
-                    Check Ingredients
+                    <span>Ingredients</span>
                     <ChevronRight className="w-3.5 h-3.5" />
                   </button>
                 </div>
@@ -381,15 +529,15 @@ export function WeeklyMenuScreen({
 
       {/* Weekly Schedule Overview Table */}
       <div className="bg-white border border-stone-200/80 rounded-xl overflow-hidden shadow-2xs">
-        <div className="p-4 bg-[#FAFBF9] border-b border-stone-200/60 flex items-center justify-between">
+        <div className="p-4 bg-[#FAFBF9] border-b border-stone-200/60 flex items-center justify-between flex-wrap gap-2">
           <div className="flex items-center gap-2">
             <Calendar className="w-4 h-4 text-stone-600" />
             <h3 className="font-semibold text-sm text-[#1F3329]">
-              Full 7-Day Dinner Calendar
+              Full 7-Day Dinner Plan & Acceptance Status
             </h3>
           </div>
           <span className="text-xs text-stone-500 font-mono">
-            {lockedCount > 0 ? `${lockedCount} day(s) locked` : 'All 7 days customizable'}
+            {acceptedCount === 7 ? 'All 7 meals accepted' : `${7 - acceptedCount} meal(s) awaiting acceptance`}
           </span>
         </div>
 
@@ -403,7 +551,7 @@ export function WeeklyMenuScreen({
               }`}
             >
               <div className="flex items-center gap-4">
-                <span className="w-24 text-xs font-bold text-stone-500 uppercase tracking-wider flex items-center gap-1.5">
+                <span className="w-24 text-xs font-bold text-stone-600 uppercase tracking-wider flex items-center gap-1.5">
                   {item.day}
                   {item.isLocked && <Lock className="w-3 h-3 text-[#233F33]" />}
                 </span>
@@ -417,10 +565,55 @@ export function WeeklyMenuScreen({
                 </div>
               </div>
 
-              <div className="flex items-center gap-3 self-end sm:self-center">
-                <span className="px-2 py-0.5 bg-stone-100 text-stone-600 text-xs rounded font-mono">
-                  {item.ingredients.length} ingredients
+              <div className="flex items-center gap-2.5 self-end sm:self-center">
+                {/* Acceptance badge */}
+                <span className={`px-2.5 py-1 text-xs font-semibold rounded-full flex items-center gap-1 ${
+                  item.isAccepted
+                    ? 'bg-emerald-100 text-emerald-800'
+                    : 'bg-amber-100 text-amber-900'
+                }`}>
+                  {item.isAccepted ? (
+                    <>
+                      <Check className="w-3 h-3" /> Accepted
+                    </>
+                  ) : (
+                    <>Needs Acceptance</>
+                  )}
                 </span>
+
+                {/* Quick Swap button */}
+                {onSwapMeal && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onSwapMeal(item.day);
+                    }}
+                    disabled={isLoading}
+                    className="px-2.5 py-1 text-xs font-semibold text-stone-600 hover:text-stone-900 bg-stone-100 hover:bg-stone-200 rounded transition-colors disabled:opacity-50"
+                  >
+                    Swap
+                  </button>
+                )}
+
+                {/* Quick Accept Toggle button */}
+                {onToggleAcceptDay && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onToggleAcceptDay(item.day);
+                    }}
+                    className={`px-2.5 py-1 text-xs font-semibold rounded transition-colors ${
+                      item.isAccepted
+                        ? 'text-stone-500 hover:text-stone-700 bg-white border border-stone-200'
+                        : 'text-white bg-[#2D6A4F] hover:bg-[#204E3A]'
+                    }`}
+                  >
+                    {item.isAccepted ? 'Un-accept' : 'Accept'}
+                  </button>
+                )}
+
                 <ChevronRight className="w-4 h-4 text-stone-400" />
               </div>
             </div>

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { HouseholdPreferences } from '../types';
 import {
   Sparkles,
@@ -10,13 +10,15 @@ import {
   ChefHat,
   AlertCircle,
   Key,
+  RefreshCw,
 } from 'lucide-react';
 
 interface GenerateMenuModalProps {
   isOpen: boolean;
   onClose: () => void;
   preferences: HouseholdPreferences;
-  onGenerate: () => Promise<void>;
+  acceptedCount?: number;
+  onGenerate: (forceAll?: boolean) => Promise<void>;
   isGenerating: boolean;
   error?: string | null;
   isDemo?: boolean;
@@ -26,11 +28,14 @@ export function GenerateMenuModal({
   isOpen,
   onClose,
   preferences,
+  acceptedCount = 0,
   onGenerate,
   isGenerating,
   error,
   isDemo,
 }: GenerateMenuModalProps) {
+  const [regenerateScope, setRegenerateScope] = useState<'unaccepted' | 'all'>('unaccepted');
+
   if (!isOpen) return null;
 
   const totalMultiplier = preferences.members.reduce((acc, m) => {
@@ -50,10 +55,10 @@ export function GenerateMenuModal({
             </div>
             <div>
               <h2 className="font-editorial text-xl font-bold text-stone-900">
-                Generate Weekly Menu
+                Curate Weekly Menu
               </h2>
               <p className="text-xs text-stone-500">
-                Gemini 3.8 Flash & Spoonacular Recipe Engine
+                Gemini AI & Spoonacular Culinary Engine
               </p>
             </div>
           </div>
@@ -64,6 +69,52 @@ export function GenerateMenuModal({
             <X className="w-5 h-5" />
           </button>
         </div>
+
+        {/* Regeneration Scope Selection (if any days are accepted) */}
+        {acceptedCount > 0 && (
+          <div className="mt-4 p-3 bg-stone-50 border border-stone-200 rounded-xl space-y-2">
+            <label className="text-xs font-bold text-stone-800 block">
+              Regeneration Scope ({acceptedCount} day(s) currently accepted):
+            </label>
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <button
+                type="button"
+                onClick={() => setRegenerateScope('unaccepted')}
+                className={`p-2.5 rounded-lg border text-left transition-all ${
+                  regenerateScope === 'unaccepted'
+                    ? 'bg-white border-[#2D6A4F] text-[#1E3027] font-semibold shadow-2xs'
+                    : 'bg-white/60 border-stone-200 text-stone-600 hover:bg-white'
+                }`}
+              >
+                <div className="flex items-center gap-1 font-bold text-xs">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                  Keep Accepted
+                </div>
+                <p className="text-[11px] text-stone-500 mt-0.5">
+                  Regenerate only {7 - acceptedCount} unaccepted day(s)
+                </p>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setRegenerateScope('all')}
+                className={`p-2.5 rounded-lg border text-left transition-all ${
+                  regenerateScope === 'all'
+                    ? 'bg-white border-[#2D6A4F] text-[#1E3027] font-semibold shadow-2xs'
+                    : 'bg-white/60 border-stone-200 text-stone-600 hover:bg-white'
+                }`}
+              >
+                <div className="flex items-center gap-1 font-bold text-xs">
+                  <RefreshCw className="w-3.5 h-3.5 text-stone-600" />
+                  Regenerate All 7
+                </div>
+                <p className="text-[11px] text-stone-500 mt-0.5">
+                  Curate fresh dishes for the entire week
+                </p>
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Operating Blueprint Constraints */}
         <div className="mt-4 p-3.5 bg-[#FAFBF9] border border-[#E0E7E2] rounded-xl text-xs space-y-2">
@@ -112,36 +163,26 @@ export function GenerateMenuModal({
           </div>
         )}
 
-        {/* Demo Mode Notice */}
-        {isDemo && (
-          <div className="mt-3 p-2.5 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 flex items-center gap-2">
-            <Key className="w-4 h-4 text-amber-600 shrink-0" />
-            <span>
-              <strong>Demo Mode:</strong> Server environment keys are not configured yet. Using curated catalog. Add keys in Vercel to activate live APIs.
-            </span>
-          </div>
-        )}
-
         {/* Error Notice */}
         {error && (
           <div className="mt-3 p-2.5 bg-rose-50 border border-rose-200 rounded-lg text-xs text-rose-800 flex items-center gap-2">
             <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
             <span>
-              <strong>Generation Notice:</strong> {error}. Current menu retained safely.
+              <strong>Notice:</strong> {error}. Current menu retained safely.
             </span>
           </div>
         )}
 
-        {/* Suggested Rotation Summary */}
-        <div className="mt-4 space-y-3">
+        {/* How It Works */}
+        <div className="mt-4 space-y-2">
           <h3 className="text-xs font-bold uppercase tracking-wider text-stone-500">
-            How It Works
+            Intelligent Curation Flow
           </h3>
 
           <div className="p-3 bg-stone-50 rounded-xl border border-stone-200/70 text-xs text-stone-600 space-y-1.5 leading-relaxed">
-            <p>1. Retrieves verified recipes from Spoonacular filtered by selected cuisines & cooking time.</p>
-            <p>2. Prompts Gemini via official @google/genai SDK with structured output validation (no hallucinated recipe IDs).</p>
-            <p>3. Recalculates exact grocery weights with household portion scaling and pantry stock deductions.</p>
+            <p>1. Gemini filters verified recipe candidates from Spoonacular matching family cuisines.</p>
+            <p>2. Curates dishes to guarantee protein balance, non-repeating variety, and zero-allergen safety.</p>
+            <p>3. You can review and swap each day individually until you accept each dinner.</p>
           </div>
         </div>
 
@@ -157,18 +198,22 @@ export function GenerateMenuModal({
           <button
             type="button"
             disabled={isGenerating}
-            onClick={onGenerate}
+            onClick={() => onGenerate(regenerateScope === 'all')}
             className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold text-white bg-[#233F33] hover:bg-[#192F26] rounded-lg shadow-2xs transition-all active:scale-[0.98] disabled:opacity-70"
           >
             {isGenerating ? (
               <>
                 <RotateCw className="w-3.5 h-3.5 animate-spin" />
-                <span>Consulting Gemini & Spoonacular...</span>
+                <span>Curating with Gemini & Spoonacular...</span>
               </>
             ) : (
               <>
                 <Sparkles className="w-3.5 h-3.5 text-emerald-300" />
-                <span>Generate Weekly Menu</span>
+                <span>
+                  {acceptedCount > 0 && regenerateScope === 'unaccepted'
+                    ? `Curate Remaining (${7 - acceptedCount})`
+                    : 'Curate Weekly Menu'}
+                </span>
               </>
             )}
           </button>

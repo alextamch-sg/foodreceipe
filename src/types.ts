@@ -81,6 +81,7 @@ export interface MenuItem {
   tags: string[];
   servings: number;
   isLocked?: boolean;
+  isAccepted?: boolean;
   ingredients: { name: string; qty: string; status: 'in-pantry' | 'buy' }[];
 }
 
