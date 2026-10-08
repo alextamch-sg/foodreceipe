@@ -1,7 +1,13 @@
 import React, { useState } from 'react';
 import { MenuItem, HouseholdPreferences } from '../types';
+import {
+  getMemberPortion,
+  getDailyCalorieTarget,
+  getSampleDinnerCalories,
+} from '../data/sampleCalories';
 import { ImgWithFallback } from './ImgWithFallback';
 import {
+  Flame,
   Calendar,
   Clock,
   Sparkles,
@@ -37,14 +43,20 @@ export function WeeklyMenuScreen({
 }: WeeklyMenuScreenProps) {
   const [selectedDay, setSelectedDay] = useState<string>('Wednesday');
 
+  const [selectedMemberId, setSelectedMemberId] = useState<string>('');
+
   const selectedMeal = menuItems.find((m) => m.day === selectedDay) || menuItems[0];
 
-  const totalMultiplier = preferences.members.reduce((acc, m) => {
-    let mult = 1.0;
-    if (m.appetite === 'Small') mult = (m.name.includes('Leo') || m.name.includes('Child')) ? 0.5 : 0.8;
-    else if (m.appetite === 'Big') mult = 1.25;
-    return acc + mult;
-  }, 0);
+  const totalMultiplier = preferences.members.reduce((acc, m) => acc + getMemberPortion(m), 0);
+
+  // Sample calorie estimate for the selected member's portion of the selected dinner
+  const selectedMember =
+    preferences.members.find((m) => m.id === selectedMemberId) || preferences.members[0];
+  const memberPortion = selectedMember ? getMemberPortion(selectedMember) : 1;
+  const memberDinnerCalories = selectedMeal
+    ? Math.round(getSampleDinnerCalories(selectedMeal) * memberPortion)
+    : 0;
+  const memberDailyTarget = selectedMember ? getDailyCalorieTarget(selectedMember) : 0;
 
   const lockedCount = menuItems.filter((m) => m.isLocked).length;
 
@@ -221,6 +233,55 @@ export function WeeklyMenuScreen({
                 <p className="text-sm text-stone-600 leading-relaxed mb-6">
                   {selectedMeal.description}
                 </p>
+
+                {/* Calories per person (sample values) */}
+                {selectedMember && (
+                  <div className="mb-6 p-3.5 bg-[#FAFBF9] border border-[#E3E8E4] rounded-xl">
+                    <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
+                      <h3 className="text-xs font-bold uppercase tracking-wider text-stone-500 flex items-center gap-1.5">
+                        <Flame className="w-3.5 h-3.5 text-[#B45309]" />
+                        Calories Per Person
+                      </h3>
+                      <label className="flex items-center gap-2 text-[11px] font-medium text-stone-500">
+                        <span>Member</span>
+                        <select
+                          value={selectedMember.id}
+                          onChange={(e) => setSelectedMemberId(e.target.value)}
+                          className="px-2 py-1 text-xs font-semibold text-stone-800 bg-white border border-stone-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-[#233F33]"
+                        >
+                          {preferences.members.map((m) => (
+                            <option key={m.id} value={m.id}>
+                              {m.name}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <div className="p-2.5 bg-white border border-stone-200/70 rounded-lg">
+                        <p className="text-[11px] font-medium text-stone-500">
+                          This dinner • {selectedMember.name}'s portion ({memberPortion}x)
+                        </p>
+                        <p className="text-lg font-bold text-stone-900 font-mono">
+                          ~{memberDinnerCalories.toLocaleString()} kcal
+                        </p>
+                      </div>
+                      <div className="p-2.5 bg-white border border-stone-200/70 rounded-lg">
+                        <p className="text-[11px] font-medium text-stone-500">
+                          Daily calorie target • whole day
+                        </p>
+                        <p className="text-lg font-bold text-stone-900 font-mono">
+                          {memberDailyTarget > 0 ? `${memberDailyTarget.toLocaleString()} kcal` : 'Not set'}
+                        </p>
+                      </div>
+                    </div>
+
+                    <p className="text-[11px] text-stone-400 mt-2">
+                      Sample estimate for this dinner only. It is one meal and is not meant to cover the full daily target.
+                    </p>
+                  </div>
+                )}
 
                 {/* Recipe Ingredients & Pantry Breakdown */}
                 <div className="mb-6">

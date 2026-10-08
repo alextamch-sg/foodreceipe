@@ -33,6 +33,7 @@ export interface HouseholdMember {
   roleDescription: string;
   appetite: 'Small' | 'Normal' | 'Big';
   multiplier: number;
+  dailyCalorieTarget?: number;
 }
 
 export interface RecurringItem {

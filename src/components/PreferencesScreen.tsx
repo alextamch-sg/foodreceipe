@@ -5,6 +5,7 @@ import {
   RecurringItem,
   TrackedPantryItem,
 } from '../types';
+import { getDailyCalorieTarget } from '../data/sampleCalories';
 import { ImgWithFallback } from './ImgWithFallback';
 import {
   Users,
@@ -110,6 +111,16 @@ export function PreferencesScreen({
     });
 
     handleUpdate({ ...prefs, members: updatedMembers });
+  };
+
+  const handleMemberCalorieTarget = (id: string, value: string) => {
+    const target = Math.max(0, Math.round(Number(value) || 0));
+    handleUpdate({
+      ...prefs,
+      members: prefs.members.map((m) =>
+        m.id === id ? { ...m, dailyCalorieTarget: target } : m
+      ),
+    });
   };
 
   const handleAdultsCount = (delta: number) => {
@@ -383,25 +394,40 @@ export function PreferencesScreen({
                     </div>
                   </div>
 
-                  {/* Appetite Selector Buttons */}
-                  <div className="flex items-center gap-1 bg-stone-200/60 p-1 rounded-lg self-end sm:self-center">
-                    <span className="text-[11px] font-medium text-stone-500 px-2 sm:hidden">
-                      Appetite:
-                    </span>
-                    {(['Small', 'Normal', 'Big'] as const).map((appLevel) => (
-                      <button
-                        key={appLevel}
-                        type="button"
-                        onClick={() => handleMemberAppetite(member.id, appLevel)}
-                        className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-all ${
-                          member.appetite === appLevel
-                            ? 'bg-[#1E3027] text-white shadow-2xs'
-                            : 'text-stone-600 hover:text-stone-900'
-                        }`}
-                      >
-                        {appLevel}
-                      </button>
-                    ))}
+                  <div className="flex items-center justify-end gap-3 flex-wrap self-end sm:self-center">
+                    {/* Daily Calorie Target */}
+                    <label className="flex items-center gap-2 text-[11px] font-medium text-stone-500">
+                      <span>Daily calorie target (kcal)</span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="50"
+                        value={getDailyCalorieTarget(member) || ''}
+                        onChange={(e) => handleMemberCalorieTarget(member.id, e.target.value)}
+                        className="w-20 px-2 py-1 text-xs font-mono text-stone-800 bg-white border border-stone-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-[#233F33]"
+                      />
+                    </label>
+
+                    {/* Appetite Selector Buttons */}
+                    <div className="flex items-center gap-1 bg-stone-200/60 p-1 rounded-lg">
+                      <span className="text-[11px] font-medium text-stone-500 px-2 sm:hidden">
+                        Appetite:
+                      </span>
+                      {(['Small', 'Normal', 'Big'] as const).map((appLevel) => (
+                        <button
+                          key={appLevel}
+                          type="button"
+                          onClick={() => handleMemberAppetite(member.id, appLevel)}
+                          className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-all ${
+                            member.appetite === appLevel
+                              ? 'bg-[#1E3027] text-white shadow-2xs'
+                              : 'text-stone-600 hover:text-stone-900'
+                          }`}
+                        >
+                          {appLevel}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
               ))}

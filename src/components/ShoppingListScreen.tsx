@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { CategoryGroup, ShoppingItem, HouseholdPreferences } from '../types';
 import { ImgWithFallback } from './ImgWithFallback';
+import { OrderGroceriesModal } from './OrderGroceriesModal';
 import {
   Copy,
   Printer,
@@ -20,6 +21,7 @@ import {
   Box,
   Share2,
   AlertTriangle,
+  Truck,
 } from 'lucide-react';
 
 interface ShoppingListScreenProps {
@@ -47,6 +49,7 @@ export function ShoppingListScreen({
 }: ShoppingListScreenProps) {
   const [filterMode, setFilterMode] = useState<'all' | 'unchecked' | 'checked'>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [isOrderOpen, setIsOrderOpen] = useState(false);
 
   // Flatten items for global metrics
   const allItems = useMemo(() => {
@@ -173,6 +176,13 @@ export function ShoppingListScreen({
           >
             <Printer className="w-3.5 h-3.5 text-stone-500" />
             Print List
+          </button>
+          <button
+            onClick={() => setIsOrderOpen(true)}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-stone-700 bg-white border border-stone-200 rounded-lg hover:bg-stone-50 shadow-2xs transition-colors"
+          >
+            <Truck className="w-3.5 h-3.5 text-stone-500" />
+            Order Groceries
           </button>
           <button
             onClick={onAddItem}
@@ -583,6 +593,13 @@ export function ShoppingListScreen({
           </div>
         </div>
       </div>
+
+      <OrderGroceriesModal
+        isOpen={isOrderOpen}
+        onClose={() => setIsOrderOpen(false)}
+        listSubtotal={totalEstimatedCost}
+        itemCount={allItems.filter((i) => i.price && !i.pantryDeducted).length}
+      />
     </div>
   );
 }

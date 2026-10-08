@@ -13,6 +13,7 @@ export const initialPreferences: HouseholdPreferences = {
       roleDescription: 'Adult • Standard serving balance',
       appetite: 'Normal',
       multiplier: 1.0,
+      dailyCalorieTarget: 2000,
     },
     {
       id: 'm2',
@@ -23,6 +24,7 @@ export const initialPreferences: HouseholdPreferences = {
       roleDescription: 'Adult • Active sports recovery',
       appetite: 'Big',
       multiplier: 1.25,
+      dailyCalorieTarget: 2400,
     },
     {
       id: 'm3',
@@ -33,6 +35,7 @@ export const initialPreferences: HouseholdPreferences = {
       roleDescription: 'Child • Finger foods & gentle textures',
       appetite: 'Small',
       multiplier: 0.5,
+      dailyCalorieTarget: 1400,
     },
   ],
   preferredFruits: ['Fuji Apples', 'Bananas', 'Seedless Grapes', 'Papaya'],
