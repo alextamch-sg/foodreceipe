@@ -91,7 +91,7 @@ export function ApiHealthModal({
 
         {/* Informational Callout */}
         <div className="mt-4 p-3 bg-stone-50 border border-stone-200 rounded-xl text-xs text-stone-600 leading-relaxed">
-          This manual check verifies server-side credentials and endpoints without background continuous polling. Missing keys seamlessly activate our curated culinary database.
+          If Spoonacular reaches its daily quota or rate limit, Gemini automatically takes over recipe searches and weekly meal planning. NutriBalance clinical tools run directly with no Smithery API key needed.
         </div>
 
         {/* Provider Cards */}

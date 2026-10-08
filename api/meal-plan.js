@@ -9,6 +9,7 @@
 import { GoogleGenAI, Type } from '@google/genai';
 import {
   searchSpoonacularRecipes,
+  generateRecipesWithGemini,
   sanitizeErrorMessage,
   getCuratedRecipes,
   getGeminiModel,
@@ -74,14 +75,26 @@ export default async function handler(req, res) {
     const cuisineQuery = primaryCuisines.join(',');
     const randomOffset = Math.floor(Math.random() * 20);
 
-    const spoonCandidatesRes = await searchSpoonacularRecipes({
-      query: '',
-      cuisine: cuisineQuery,
-      number: 20,
-      offset: randomOffset,
-    });
+    let spoonCandidatesRes;
+    try {
+      spoonCandidatesRes = await searchSpoonacularRecipes({
+        query: '',
+        cuisine: cuisineQuery,
+        number: 20,
+        offset: randomOffset,
+      });
+    } catch (spoonErr) {
+      console.warn('Spoonacular unavailable or quota reached. Curating candidates with Gemini:', spoonErr.message);
+      const geminiCandidates = await generateRecipesWithGemini({
+        query: 'wholesome family dinner',
+        cuisine: cuisineQuery,
+        number: 15,
+        offset: randomOffset,
+      });
+      spoonCandidatesRes = { results: geminiCandidates, spoonacularQuotaExceeded: true };
+    }
 
-    let candidates = spoonCandidatesRes.results || [];
+    let candidates = spoonCandidatesRes?.results || [];
     const curated = getCuratedRecipes('', '', 25, randomOffset);
     candidates = [...candidates, ...curated];
 

@@ -7,6 +7,9 @@
 import {
   searchSpoonacularRecipes,
   getSpoonacularRecipeInformation,
+  generateRecipesWithGemini,
+  getRecipeDetailsWithGemini,
+  getCuratedRecipes,
   sanitizeErrorMessage,
 } from '../lib/api-client.js';
 
@@ -44,7 +47,7 @@ export default async function handler(req, res) {
       });
     }
 
-    // Otherwise, perform complexSearch
+    // Otherwise, perform recipe search
     const searchResult = await searchSpoonacularRecipes({
       query,
       cuisine,
@@ -57,14 +60,38 @@ export default async function handler(req, res) {
     });
   } catch (error) {
     const sanitized = sanitizeErrorMessage(error);
-    const isQuota = sanitized.toLowerCase().includes('quota');
-    const isRate = sanitized.toLowerCase().includes('rate');
+    console.warn(`Spoonacular unavailable or limit reached: ${sanitized}. Utilizing Gemini AI to complete recipe task.`);
 
-    return res.status(isQuota ? 402 : isRate ? 429 : 500).json({
-      success: false,
-      error: sanitized,
-      isDemo: true,
-      fallbackUsed: true,
-    });
+    try {
+      if (id) {
+        const geminiRecipe = await getRecipeDetailsWithGemini(id);
+        return res.status(200).json({
+          success: true,
+          source: 'gemini',
+          spoonacularQuotaExceeded: true,
+          recipe: geminiRecipe,
+        });
+      }
+
+      const geminiResults = await generateRecipesWithGemini({
+        query,
+        cuisine,
+        number: Math.min(Math.max(number, 1), 20),
+      });
+
+      return res.status(200).json({
+        success: true,
+        source: 'gemini',
+        spoonacularQuotaExceeded: true,
+        message: 'Spoonacular usage limit reached. Curated fresh recipes using Gemini AI.',
+        results: geminiResults,
+      });
+    } catch (fallbackError) {
+      return res.status(200).json({
+        success: true,
+        source: 'curated',
+        results: getCuratedRecipes(query, cuisine, number),
+      });
+    }
   }
 }
